@@ -1,4 +1,4 @@
-PROJECT(currennt)
+PROJECT(currennt_nlm)
 
 CMAKE_MINIMUM_REQUIRED (VERSION 2.8)
 
@@ -10,8 +10,8 @@ INCLUDE_DIRECTORIES (${Boost_INCLUDE_DIR})
 LINK_DIRECTORIES (${Boost_LIBRARY_DIR})
 
 SET (CMAKE_BUILD_TYPE Release)
-SET (CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -arch compute_13")
-SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-format-security")
+SET (CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -arch=sm_30 -std=c++11")
+SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-format-security -std=c++11 -g")
 
 FILE (GLOB_RECURSE src_lib     currennt_lib/*.cpp currennt_lib/*.hpp     currennt_lib/*.h     currennt_lib/*.cu     currennt_lib/*.cuh)
 FILE (GLOB_RECURSE src_trainer currennt/*.cpp     currennt/*.hpp         currennt/*.h         currennt/*.cu         currennt/*.cuh)
@@ -21,4 +21,5 @@ CUDA_ADD_EXECUTABLE (${PROJECT_NAME} ${src_lib} ${src_trainer})
 CUDA_ADD_CUBLAS_TO_TARGET (${PROJECT_NAME})
 TARGET_LINK_LIBRARIES (${PROJECT_NAME} netcdf)
 TARGET_LINK_LIBRARIES (${PROJECT_NAME} ${Boost_LIBRARIES})
+
 

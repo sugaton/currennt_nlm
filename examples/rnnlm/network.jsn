@@ -1,0 +1,44 @@
+{
+    "layers": [
+        {
+            "size": 1,
+            "name": "intinput",
+            "type": "intinput"
+        },
+		  {
+            "size": 64,
+            "name": "lookup",
+            "type": "lookup"
+        },
+
+        {
+            "size": 128,
+            "name": "blstm_level_0",
+            "bias": 1.0,
+            "type": "blstm"
+        },
+        {
+            "size": 256,
+            "name": "blstm_level_1",
+            "bias": 1.0,
+            "type": "blstm"
+        },
+        {
+            "size": 128,
+            "name": "blstm_level_2",
+            "bias": 1.0,
+            "type": "blstm"
+        },
+        {
+            "size": 39,
+            "name": "softmax",
+            "bias": 1.0,
+            "type": "softmax"
+        },
+        {
+            "size": 39,
+            "name": "postoutput",
+            "type": "sse"
+        }
+    ]
+}

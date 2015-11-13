@@ -26,7 +26,6 @@
 
 #include "SteepestDescentOptimizer.hpp"
 #include "../layers/TrainableLayer.hpp"
-#include "../rnnm/LookupLayer.hpp"
 #include "../helpers/getRawPointer.cuh"
 #include "../rapidjson/document.h"
 

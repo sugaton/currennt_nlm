@@ -115,7 +115,7 @@ namespace layers {
 
     private:
         const bool m_isBidirectional;
-        
+
         real_t *_rawNiBiasWeights;
         real_t *_rawIgBiasWeights;
         real_t *_rawFgBiasWeights;
@@ -139,7 +139,7 @@ namespace layers {
          * @param bidirectional  Wether the layer should be bidirectional or unidirectional
          */
         LstmLayer(
-            const helpers::JsonValue &layerChild, 
+            const helpers::JsonValue &layerChild,
             const helpers::JsonValue &weightsSection,
             Layer<TDevice>           &precedingLayer,
             bool                      bidirectional = false

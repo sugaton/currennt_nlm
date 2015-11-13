@@ -24,10 +24,13 @@
 #include "Configuration.hpp"
 #include "LayerFactory.hpp"
 #include "layers/InputLayer.hpp"
+#include "rnnlm/intInputLayer.hpp"
+#include "rnnlm/LookupLayer.hpp"
 #include "layers/PostOutputLayer.hpp"
 #include "helpers/JsonClasses.hpp"
 
 #include <vector>
+#include <map>
 #include <stdexcept>
 #include <cassert>
 
@@ -35,9 +38,12 @@
 
 
 template <typename TDevice>
-NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc, int parallelSequences, int maxSeqLength, 
-                                      int inputSizeOverride = -1, int outputSizeOverride = -1)
+NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc, int parallelSequences, int maxSeqLength,
+                                      int inputSizeOverride, int outputSizeOverride)
+                                    //   int inputSizeOverride = -1, int outputSizeOverride = -1)
 {
+    bool b_intinput = false;
+    printf("\nmaxSeqLength:%d parallelSequences: %d\n", maxSeqLength, parallelSequences);
     try {
         // check the layers and weight sections
         if (!jsonDoc->HasMember("layers"))
@@ -67,18 +73,24 @@ NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc, int 
 
             std::string layerType = (*layerChild)["type"].GetString();
 
+            printf("\t creating network %s..\n", (*layerChild)["name"].GetString());
             // override input/output sizes
             if (inputSizeOverride > 0 && layerType == "input") {
-              (*layerChild)["size"].SetInt(inputSizeOverride);
+                (*layerChild)["size"].SetInt(inputSizeOverride);
             }
-/*  Does not work yet, need another way to identify a) postoutput layer (last!) and then the corresponging output layer and type!
-            if (outputSizeOverride > 0 && (*layerChild)["name"].GetString() == "output") {
-              (*layerChild)["size"].SetInt(outputSizeOverride);
+// /*  Does not work yet, need another way to identify a) postoutput layer (last!) and then the corresponging output layer and type!
+            if (outputSizeOverride > 0 && strcmp( (*layerChild)["name"].GetString(), "output" )==0) {
+                (*layerChild)["size"].SetInt(outputSizeOverride);
             }
-            if (outputSizeOverride > 0 && (*layerChild)["name"].GetString() == "postoutput") {
-              (*layerChild)["size"].SetInt(outputSizeOverride);
+            if (outputSizeOverride > 0 && strcmp( (*layerChild)["name"].GetString() , "postoutput" ) == 0 ) {
+                (*layerChild)["size"].SetInt(outputSizeOverride);
             }
-*/
+            // lookup-layer need the number of word
+            if (strcmp( (*layerChild)["name"].GetString() , "lookup" ) == 0 ) {
+                // (*layerChild)["w_size"].SetInt(outputSizeOverride);
+                (*layerChild).AddMember("w_size", outputSizeOverride, jsonDoc->GetAllocator());
+            }
+// */
             try {
             	layers::Layer<TDevice> *layer;
 
@@ -100,10 +112,12 @@ NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc, int 
 
         // check if only the first layer is an input layer
         if (!dynamic_cast<layers::InputLayer<TDevice>*>(m_layers.front().get()))
-            throw std::runtime_error("The first layer is not an input layer");
+            if (!dynamic_cast<layers::intInputLayer<TDevice>*>(m_layers.front().get()))
+                throw std::runtime_error("The first layer is not an input layer");
+            else b_intinput = true;
 
         for (size_t i = 1; i < m_layers.size(); ++i) {
-            if (dynamic_cast<layers::InputLayer<TDevice>*>(m_layers[i].get()))
+            if (dynamic_cast<layers::InputLayer<TDevice>*>(m_layers[i].get()) || dynamic_cast<layers::intInputLayer<TDevice>*>(m_layers[i].get()))
                 throw std::runtime_error("Multiple input layers defined");
         }
 
@@ -134,6 +148,17 @@ NeuralNetwork<TDevice>::~NeuralNetwork()
 {
 }
 
+
+template <typename TDevice>
+void NeuralNetwork<TDevice>::setWordDict(std::unordered_map<std::string, int> *wdic)
+{
+	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(m_layers[1].get());
+    // need to Cast, cause cuda code dose not support unordered_map.
+    std::map<std::string, int> tmp_map(wdic->begin(), wdic->end());
+    if (lookup)
+        lookup->setWordDict(&tmp_map);
+}
+
 template <typename TDevice>
 const std::vector<boost::shared_ptr<layers::Layer<TDevice> > >& NeuralNetwork<TDevice>::layers() const
 {
@@ -144,6 +169,12 @@ template <typename TDevice>
 layers::InputLayer<TDevice>& NeuralNetwork<TDevice>::inputLayer()
 {
     return static_cast<layers::InputLayer<TDevice>&>(*m_layers.front());
+}
+
+template <typename TDevice>
+layers::intInputLayer<TDevice>& NeuralNetwork<TDevice>::intinputLayer()
+{
+    return static_cast<layers::intInputLayer<TDevice>&>(*m_layers.front());
 }
 
 template <typename TDevice>
@@ -161,8 +192,9 @@ layers::PostOutputLayer<TDevice>& NeuralNetwork<TDevice>::postOutputLayer()
 template <typename TDevice>
 void NeuralNetwork<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction)
 {
-    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers)
+    BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers){
         layer->loadSequences(fraction);
+    }
 }
 
 template <typename TDevice>
@@ -190,6 +222,12 @@ real_t NeuralNetwork<TDevice>::calculateError() const
 }
 
 template <typename TDevice>
+real_t NeuralNetwork<TDevice>::calculateEntropy() const
+{
+    return static_cast<layers::PostOutputLayer<TDevice>&>(*m_layers.back()).calculateEntropy();
+}
+
+template <typename TDevice>
 void NeuralNetwork<TDevice>::exportLayers(const helpers::JsonDocument& jsonDoc) const
 {
     if (!jsonDoc->IsObject())
@@ -208,6 +246,10 @@ void NeuralNetwork<TDevice>::exportLayers(const helpers::JsonDocument& jsonDoc) 
 
     // add the section to the JSON document
     jsonDoc->AddMember("layers", layersArray, jsonDoc->GetAllocator());
+
+	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(m_layers[1].get());
+    if (lookup)
+        lookup->exportDict(jsonDoc, &jsonDoc->GetAllocator());
 }
 
 template <typename TDevice>
@@ -224,6 +266,11 @@ void NeuralNetwork<TDevice>::exportWeights(const helpers::JsonDocument& jsonDoc)
     	layers::TrainableLayer<TDevice> *trainableLayer = dynamic_cast<layers::TrainableLayer<TDevice>*>(layer.get());
         if (trainableLayer)
             trainableLayer->exportWeights(&weightsObject, &jsonDoc->GetAllocator());
+        else{
+        	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(layer.get());
+            if (lookup)
+                lookup->exportWeights(&weightsObject, &jsonDoc->GetAllocator());
+        }
     }
 
     // if the section already exists, we delete it first
@@ -238,7 +285,7 @@ template <typename TDevice>
 std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutputs()
 {
     layers::TrainableLayer<TDevice> &ol = outputLayer();
-    
+
     std::vector<std::vector<std::vector<real_t> > > outputs;
     for (int patIdx = 0; patIdx < (int)ol.patTypes().size(); ++patIdx) {
         switch (ol.patTypes()[patIdx]) {

@@ -1,9 +1,8 @@
 #ifndef INT_INPUT_LAYER_HPP
 #define INT_INPUT_LAYER_HPP
-#endif
 
 #include "../layers/Layer.hpp"
-#include "intDataSetFraction.hpp"
+#include "../corpus/CorpusFraction.hpp"
 
 namespace layers {
 
@@ -16,6 +15,8 @@ namespace layers {
     template <typename TDevice>
     class intInputLayer : public Layer<TDevice>
     {
+        typedef typename TDevice::int_vector int_vector;
+        typedef typename TDevice::pattype_vector pattype_vector;
     public:
         /**
          * Construct the layer
@@ -24,8 +25,11 @@ namespace layers {
          * @param parallelSequences The maximum number of sequences that shall be computed in parallel
          * @param maxSeqLength      The maximum length of a sequence
          */
-        template <typename TDevice>
+        // template <typename TDevice>
         intInputLayer(const helpers::JsonValue &layerChild, int parallelSequences, int maxSeqLength);
+
+        // virtual int_vector& outputs();
+        virtual int_vector& intoutputs();
 
         virtual ~intInputLayer();
 
@@ -35,10 +39,21 @@ namespace layers {
 
         virtual void computeBackwardPass();
 
-        virtual void loadSequences(const data_sets::intDataSetFraction &fraction)
+        virtual void loadSequences(const data_sets::DataSetFraction &fraction);
 
+    protected:
+        int_vector& _intoutputs();
     private:
         int_vector m_outputsInt;
-    }
+
+        int               m_curMaxSeqLength;
+        int               m_curMinSeqLength;
+        int               m_curNumSeqs;
+        // real_vector       m_outputs;
+        // real_vector       m_outputErrors;
+        pattype_vector    m_patTypes;
+    };
 
 }
+
+#endif

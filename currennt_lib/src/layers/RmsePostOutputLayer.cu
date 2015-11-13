@@ -95,7 +95,7 @@ namespace {
             return error;
         }
     };
-    
+
 } // anonymous namespace
 } // namespace anonymous
 
@@ -132,6 +132,9 @@ namespace layers {
 
         return rmse;
     }
+
+    template <typename TDevice>
+    real_t RmsePostOutputLayer<TDevice>::calculateEntropy(){ return 0.0; }
 
     template <typename TDevice>
     void RmsePostOutputLayer<TDevice>::computeForwardPass()

@@ -20,8 +20,8 @@
  * along with CURRENNT.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-#ifndef DATA_SETS_DATASETFRACTION_HPP
-#define DATA_SETS_DATASETFRACTION_HPP
+#ifndef DATA_SETS_CORPUSFRACTION_HPP
+#define DATA_SETS_CORPUSFRACTION_HPP
 
 #include "../Types.hpp"
 #include "../data_sets/DataSetFraction.hpp"
@@ -36,30 +36,12 @@ namespace data_sets {
      * Contains a fraction of the data sequences in a DataSet that is small enough to be
      * transferred completely to the GPU
      *********************************************************************************************/
-    class CorpusFraction : DataSetFraction
+    class CorpusFraction : public DataSetFraction
     {
-        friend class CorpusFraction;
+        friend class Corpus;
 
-    // public:
-    //     struct seq_info_t {
-    //         int         originalSeqIdx;
-    //         int         length;
-    //         std::string seqTag;
-    //     };
-    //
     // private:
-    //     int m_inputPatternSize;
-    //     int m_outputPatternSize;
-    //     int m_maxSeqLength;
-    //     int m_minSeqLength;
-    //
-    //     std::vector<seq_info_t> m_seqInfo;
-    //
-        Cpu::int_vector    m_inputs;
-        // Cpu::real_vector    m_outputs;
-        // Cpu::pattype_vector m_patTypes;
-        Cpu::int_vector     m_targetClasses;
-
+    //     Cpu::int_vector m_inputs;
     private:
         /**
          * Creates the instance
@@ -72,75 +54,15 @@ namespace data_sets {
          */
         ~CorpusFraction();
 
-        /**
-         * Returns the size of each input pattern
-         *
-         * @return The size of each input pattern
-         */
-        // int inputPatternSize() const;
 
-        /**
-         * Returns the size of each output pattern
-         *
-         * @return The size of each output pattern
-         */
-        // int outputPatternSize() const;
+        // const Cpu::int_vector& inputs() const;
 
-        /**
-         * Returns the length of the longest sequence
-         *
-         * @return The length of the longest sequence
-         */
-        // int maxSeqLength() const;
+        void set_inputPatternSize(int inputPatternSize);
+        void set_outputPatternSize(int outputPatternSize);
+        void set_maxSeqLength(int maxSeqLength);
+        int set_minSeqLength(int minSeqLength);
+        void set_seqInfo(DataSetFraction::seq_info_t& seqInfo);
 
-        /**
-         * Returns the length of the shortest sequence
-         *
-         * @return The length of the shortest sequence
-         */
-        // int minSeqLength() const;
-
-        /**
-         * Returns the number of sequences in the fraction
-         *
-         * @return The number of sequences in the fraction
-         */
-        // int numSequences() const;
-
-        /**
-         * Returns information about a sequence
-         *
-         * @param seqIdx The index of the sequence
-         */
-        // const seq_info_t& seqInfo(int seqIdx) const;
-
-        /**
-         * Returns the pattern types vector
-         *
-         * @return The pattern types vector
-         */
-        // const Cpu::pattype_vector& patTypes() const;
-
-        /**
-         * Returns the input patterns vector
-         *
-         * @return The input patterns vector
-         */
-        const Cpu::int_vector& inputs() const;
-
-        /**
-         * Returns the output patterns vector
-         *
-         * @return The output patterns vector
-         */
-        // const Cpu::real_vector& outputs() const;
-
-        /**
-         * Returns the target classes vector
-         *
-         * @return The target classes vector
-         */
-        // const Cpu::int_vector& targetClasses() const;
     };
 
 } // namespace data_sets

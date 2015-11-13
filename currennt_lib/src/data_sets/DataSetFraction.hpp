@@ -24,6 +24,7 @@
 #define DATA_SETS_DATASETFRACTION_HPP
 
 #include "../Types.hpp"
+// #include "../corpus/CorpusFraction.hpp"
 
 #include <vector>
 #include <string>
@@ -32,12 +33,13 @@
 namespace data_sets {
 
     /******************************************************************************************//**
-     * Contains a fraction of the data sequences in a DataSet that is small enough to be 
+     * Contains a fraction of the data sequences in a DataSet that is small enough to be
      * transferred completely to the GPU
      *********************************************************************************************/
     class DataSetFraction
     {
         friend class DataSet;
+        // friend class CorpusFraction;
 
     public:
         struct seq_info_t {
@@ -55,11 +57,14 @@ namespace data_sets {
         std::vector<seq_info_t> m_seqInfo;
 
         Cpu::real_vector    m_inputs;
+        Cpu::int_vector    m_intinputs;
         Cpu::real_vector    m_outputs;
         Cpu::pattype_vector m_patTypes;
         Cpu::int_vector     m_targetClasses;
+        int m_inputType = 0;  //0: real, 1: int. default: 0
 
-    private:
+    // private:
+    protected:
         /**
          * Creates the instance
          */
@@ -125,7 +130,7 @@ namespace data_sets {
          *
          * @return The input patterns vector
          */
-        const Cpu::real_vector& inputs() const;
+        const input_vector_type& inputs() const;
 
         /**
          * Returns the output patterns vector
@@ -140,6 +145,32 @@ namespace data_sets {
          * @return The target classes vector
          */
         const Cpu::int_vector& targetClasses() const;
+
+        /**
+         * Set member values
+         */
+        Cpu::int_vector* intinput();
+
+        const Cpu::int_vector& intinput_const() const;
+
+        void use_intInput();
+
+        void set_inputPatternSize(int inputPatternSize);
+
+        void set_outputPatternSize(int outputPatternSize);
+
+        void set_maxSeqLength(int maxSeqLength);
+
+        int set_minSeqLength(int minSeqLength);
+
+        void set_seqInfo(DataSetFraction::seq_info_t& seqInfo);
+
+        void setTargetClasses(int posi, int value);
+
+        void setPatTypes(int posi, char value);
+
+        void vectorResize(int parallelSequences, char pat, int num);
+
     };
 
 } // namespace data_sets

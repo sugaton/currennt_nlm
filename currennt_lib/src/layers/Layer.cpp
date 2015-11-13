@@ -120,6 +120,18 @@ namespace layers {
     }
 
     template <typename TDevice>
+    typename Layer<TDevice>::int_vector& Layer<TDevice>::intoutputs()
+    {
+        return m_intoutputs;
+    }
+
+    template <typename TDevice>
+    typename Layer<TDevice>::int_vector& Layer<TDevice>::_intoutputs()
+    {
+        return m_intoutputs;
+    }
+
+    template <typename TDevice>
     typename Layer<TDevice>::real_vector& Layer<TDevice>::outputs()
     {
         return m_outputs;
@@ -139,7 +151,7 @@ namespace layers {
         m_curNumSeqs      = fraction.numSequences();
         m_patTypes        = fraction.patTypes();
     }
-    
+
     template <typename TDevice>
     void Layer<TDevice>::exportLayer(const helpers::JsonValue &layersArray, const helpers::JsonAllocator &allocator) const
     {

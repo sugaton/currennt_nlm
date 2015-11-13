@@ -23,6 +23,7 @@
 #include "InputLayer.hpp"
 
 #include <boost/lexical_cast.hpp>
+#include <boost/variant.hpp>
 #include <stdexcept>
 
 
@@ -56,7 +57,9 @@ namespace layers {
 
         Layer<TDevice>::loadSequences(fraction);
 
-        thrust::copy(fraction.inputs().begin(), fraction.inputs().end(), this->_outputs().begin());
+        thrust::copy(boost::get<Cpu::real_vector>(fraction.inputs()).begin(),
+                     boost::get<Cpu::real_vector>(fraction.inputs()).end(),
+                     this->_outputs().begin());
     }
 
     template <typename TDevice>

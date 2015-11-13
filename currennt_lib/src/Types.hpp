@@ -25,6 +25,7 @@
 
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
+#include <boost/variant.hpp>
 
 
 #define PATTYPE_NONE   0 ///< pattern does not belong to the sequence
@@ -66,5 +67,9 @@ struct Gpu
     typedef thrust::device_vector<char>   pattype_vector;
 };
 
+/*************************************************************************//**
+ * define variant types for input layer and datafraction
+ *****************************************************************************/
+typedef boost::variant<Cpu::real_vector, Cpu::int_vector> input_vector_type;
 
 #endif // TYPES_HPP

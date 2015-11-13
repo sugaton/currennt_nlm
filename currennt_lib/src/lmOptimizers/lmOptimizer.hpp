@@ -60,6 +60,7 @@ namespace optimizers {
         real_t m_curValidationClassError;
         real_t m_curTrainingClassError;
         real_t m_curTestClassError;
+        int    m_errorType;
 
         std::vector<real_vector> m_curWeightUpdates;
         std::vector<real_vector> m_bestWeights;
@@ -105,6 +106,12 @@ namespace optimizers {
          * Destructs the optimizer
          */
         virtual ~lmOptimizer();
+
+
+        /**
+         * set flag of using entropy-error on.
+         */
+        void use_entropyError();
 
         /**
          * Check if the training is finished

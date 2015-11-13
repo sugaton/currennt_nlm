@@ -56,7 +56,7 @@ namespace layers {
          * @param createOutputs  If false, then the outputs vector will be left empty
          */
         PostOutputLayer(
-            const helpers::JsonValue &layerChild, 
+            const helpers::JsonValue &layerChild,
             Layer<TDevice>  &precedingLayer,
             int requiredSize,
             bool                      createOutputs = true
@@ -75,9 +75,10 @@ namespace layers {
         /**
          * Computes the error with respect to the target outputs
          *
-         * @return The error 
+         * @return The error
          */
         virtual real_t calculateError() =0;
+        virtual real_t calculateEntropy() =0;
 
     };
 

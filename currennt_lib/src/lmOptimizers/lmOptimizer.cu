@@ -27,7 +27,10 @@
 #include "../Configuration.hpp"
 #include "../helpers/JsonClasses.hpp"
 
+#include "../rnnlm/LookupLayer.hpp"
+
 #include <limits>
+#include <math.h>
 
 #include <thrust/transform.h>
 
@@ -47,7 +50,10 @@ namespace optimizers {
             // compute forward pass and calculate the error
             m_neuralNetwork.loadSequences(*frac);
             m_neuralNetwork.computeForwardPass();
-            error += m_neuralNetwork.calculateError();
+            if (!m_errorType) // log_prob
+                error += m_neuralNetwork.calculateError();
+            else  // entropy
+                error += m_neuralNetwork.calculateError();
 
             if (dynamic_cast<layers::BinaryClassificationLayer<TDevice>*>(&m_neuralNetwork.postOutputLayer()))
                 *classError -= (real_t)static_cast<layers::BinaryClassificationLayer<TDevice>&>(m_neuralNetwork.postOutputLayer()).countCorrectClassifications();
@@ -69,7 +75,16 @@ namespace optimizers {
                 // compute the backward pass and accumulate the weight updates
                 m_neuralNetwork.computeBackwardPass();
 
-                for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
+                // case lookup-layer (i = 1)
+                {
+                    layers::LookupLayer<TDevice> *layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers()[1].get());
+                    if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
+                        thrust::transform(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[1].begin(), m_curWeightUpdates[1].begin(), thrust::plus<real_t>());
+                    else
+                    	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[1].begin());
+                }
+
+                for (size_t i = 2; i < m_neuralNetwork.layers().size()-1; ++i) {
                     layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers()[i].get());
                     if (!layer)
                         continue;
@@ -97,7 +112,10 @@ namespace optimizers {
             _updateWeights();
 
         // normalize the errors
-        error /= ds.totalSequences();
+        if (!m_errorType)
+            error /= ds.totalSequences();
+        else  // perplexity
+            error = exp(error / ds.totalTimesteps());
         *classError /= (real_t)ds.totalTimesteps();
 
         return error;
@@ -180,6 +198,12 @@ namespace optimizers {
         return m_curWeightUpdates;
     }
 
+
+    template <typename TDevice>
+    void lmOptimizer<TDevice>::use_entropyError()
+    {
+        m_errorType = 0;
+    }
     template <typename TDevice>
     lmOptimizer<TDevice>::lmOptimizer(NeuralNetwork<TDevice> &neuralNetwork, data_sets::Corpus &trainingSet,
                                    data_sets::Corpus &validationSet, data_sets::Corpus &testSet,
@@ -202,6 +226,7 @@ namespace optimizers {
         , m_curValidationClassError   (0)
         , m_curTrainingClassError     (0)
         , m_curTestClassError         (0)
+        , m_errorType                 (0)
     {
         // initialize the best weights vectors
         m_bestWeights.resize(m_neuralNetwork.layers().size());
@@ -209,6 +234,13 @@ namespace optimizers {
         	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers()[i].get());
             if (layer)
                 m_bestWeights[i] = layer->weights();
+            else{
+                if (i == 1){
+                  	layers::LookupLayer<TDevice> *_layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers()[i].get());
+                    if (_layer)
+                        m_bestWeights[i] = _layer->weightUpdates();
+                }
+            }
         }
 
         // initialize the current weight updates vectors

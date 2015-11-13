@@ -26,7 +26,7 @@
 
 #include "lmSteepestDescentOptimizer.hpp"
 #include "../layers/TrainableLayer.hpp"
-#include "../rnnm/LookupLayer.hpp"
+#include "../rnnlm/LookupLayer.hpp"
 #include "../helpers/getRawPointer.cuh"
 #include "../rapidjson/document.h"
 
@@ -72,32 +72,33 @@ namespace optimizers {
         updateWeightFn.momentum     = m_momentum;
 
         for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
-          	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(this->_neuralNetwork().layers()[i].get());
-            if (i == 1 && layer->type() == "lookup"){
-                layer =  this->_neuralNetwork().layers()[i].get();
+            if (i == 1){
+                layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers()[i].get() );
+                if (layer->type() != "lookup") continue;
                 //update embeddings in lookup layer
-                real_vector& emb;
                 int w;
-                for (int i = 0; i < layer->precedingLayer().outputs().size(); ++i){
-                    w = layer->precedingLayer().outputs()[i]
-                    emb = layer->embeddings(w, i);
-                    updateWeightFn.weights       = helpers::getRawPointer(emb);
+                for (int i = 0; i < layer->precedingLayer().intoutputs().size(); ++i){
+                    w = layer->precedingLayer().intoutputs()[i];
+                    real_vector* emb = layer->embeddings(w, i);  // if embeddings(w, i) is on the gpu memory, emb has the direct raw pointer of embeddings
+                                                      // if it is on the cpu memory, emb is the temporal device vector(m_device_vectors.at(i)), thus we should feed back to original space by calling Embedding.replace()
+                    updateWeightFn.weights       = helpers::getRawPointer(*emb);
                     updateWeightFn.weightUpdates = helpers::getRawPointer(this->_curWeightUpdates()[1]) + i * layer->size();
                     updateWeightFn.weightDeltas  = helpers::getRawPointer(m_weightDeltas[1]) + i * layer->size();
 
                     thrust::transform(
                         thrust::counting_iterator<int>(0),
-                        thrust::counting_iterator<int>((int)emb.size()),
-                        emb.begin(),
+                        thrust::counting_iterator<int>((int)emb->size()),
+                        emb->begin(),
                         updateWeightFn
                         );
-                  if (layer->get_emb(w).type() != typeid(TDevice).name()){
-                      layer->get_emb(w).replace<TDevice>(emb);
+                  if ( layer->get_emb(w)->type() != std::string(typeid(TDevice).name()) ){
+                      layer->get_emb(w)->replace(emb);
                   }
                 }
                 continue;
             }
 
+          	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(this->_neuralNetwork().layers()[i].get());
             if (!layer)
                 continue;
 
@@ -121,10 +122,10 @@ namespace optimizers {
 
     template <typename TDevice>
     lmSteepestDescentOptimizer<TDevice>::lmSteepestDescentOptimizer(
-        NeuralNetwork<TDevice> &neuralNetwork, data_sets::DataSet &trainingSet, data_sets::DataSet &validationSet,
-        data_sets::DataSet &testSet, int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery,
+        NeuralNetwork<TDevice> &neuralNetwork, data_sets::Corpus &trainingSet, data_sets::Corpus &validationSet,
+        data_sets::Corpus &testSet, int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery,
         real_t learningRate, real_t momentum)
-        : Optimizer<TDevice>(neuralNetwork, trainingSet, validationSet, testSet, maxEpochs, maxEpochsNoBest, validateEvery, testEvery)
+        : lmOptimizer<TDevice>(neuralNetwork, trainingSet, validationSet, testSet, maxEpochs, maxEpochsNoBest, validateEvery, testEvery)
         , m_learningRate    (learningRate)
         , m_learningRateFirst(learningRate)
         , m_momentum        (momentum)
@@ -143,17 +144,17 @@ namespace optimizers {
     template <typename TDevice>
     void lmSteepestDescentOptimizer<TDevice>::exportState(const helpers::JsonDocument &jsonDoc) const
     {
-        Optimizer<TDevice>::exportState(jsonDoc);
+        lmOptimizer<TDevice>::exportState(jsonDoc);
 
-        Optimizer<TDevice>::_exportWeights(jsonDoc, "steepest_descent_optimizer_weight_deltas", m_weightDeltas);
+        lmOptimizer<TDevice>::_exportWeights(jsonDoc, "steepest_descent_optimizer_weight_deltas", m_weightDeltas);
     }
 
     template <typename TDevice>
     void lmSteepestDescentOptimizer<TDevice>::importState(const helpers::JsonDocument &jsonDoc)
     {
-        Optimizer<TDevice>::importState(jsonDoc);
+        lmOptimizer<TDevice>::importState(jsonDoc);
 
-        Optimizer<TDevice>::_importWeights(jsonDoc, "steepest_descent_optimizer_weight_deltas", &m_weightDeltas);
+        lmOptimizer<TDevice>::_importWeights(jsonDoc, "steepest_descent_optimizer_weight_deltas", &m_weightDeltas);
     }
 
     template <typename TDevice>

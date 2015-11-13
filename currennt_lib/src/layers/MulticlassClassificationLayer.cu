@@ -68,6 +68,30 @@ namespace {
         }
     };
 
+
+    struct ComputeEntropyFn
+    {
+        int layerSize;
+
+        const real_t *outputs;
+
+        __host__ __device__ real_t operator() (const thrust::tuple<int, int> &t) const
+        {
+            // unpack the tuple
+            int targetClass = t.get<0>();
+            int patIdx      = t.get<1>();
+
+            // calculate the CEE
+            if (targetClass == -1)
+                return 0;
+            else {
+                int outputIdx     = outputIdx = patIdx * layerSize + targetClass;
+                real_t targetProb = helpers::max(helpers::NumericLimits<real_t>::min(), outputs[outputIdx]);
+                return targetProb * log2(targetProb);
+            }
+        }
+    };
+
     struct CountCorrectClassificationsFn
     {
         int layerSize;
@@ -175,7 +199,7 @@ namespace layers {
 
         return correctClassifications;
     }
-    
+
     template <typename TDevice>
     const std::string& MulticlassClassificationLayer<TDevice>::type() const
     {
@@ -196,6 +220,28 @@ namespace layers {
     {
         // calculate the cross entropy error
         internal::ComputeCrossEntropyErrorFn fn;
+        fn.layerSize = this->size();
+        fn.outputs   = helpers::getRawPointer(this->_actualOutputs());
+
+        int n = this->curMaxSeqLength() * this->parallelSequences();
+
+        real_t error = thrust::transform_reduce(
+            thrust::make_zip_iterator(thrust::make_tuple(m_patTargetClasses.begin(),   thrust::counting_iterator<int>(0))),
+            thrust::make_zip_iterator(thrust::make_tuple(m_patTargetClasses.begin()+n, thrust::counting_iterator<int>(0)+n)),
+            fn,
+            (real_t)0,
+            thrust::plus<real_t>()
+            );
+
+        return -error;
+    }
+
+
+    template <typename TDevice>
+    real_t MulticlassClassificationLayer<TDevice>::calculateEntropy()
+    {
+        // calculate the cross entropy error
+        internal::ComputeEntropyFn fn;
         fn.layerSize = this->size();
         fn.outputs   = helpers::getRawPointer(this->_actualOutputs());
 

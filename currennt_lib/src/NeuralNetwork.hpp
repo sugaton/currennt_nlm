@@ -24,6 +24,7 @@
 #define NEURALNETWORK_HPP
 
 #include "layers/InputLayer.hpp"
+#include "rnnlm/intInputLayer.hpp"
 #include "layers/TrainableLayer.hpp"
 #include "layers/PostOutputLayer.hpp"
 #include "data_sets/DataSet.hpp"
@@ -36,6 +37,7 @@
 
 #include <vector>
 #include <memory>
+#include <unordered_map>
 
 
 /*****************************************************************************************************************//**
@@ -58,7 +60,7 @@ public:
      * @param maxSeqLength      The maximum length of a sequence
      */
     NeuralNetwork(const helpers::JsonDocument &jsonDoc, int parallelSequences, int maxSeqLength,
-                  int inputSizeOverride, int outputSizeOverride);
+                  int inputSizeOverride = -1, int outputSizeOverride = -1);
 
     /**
      * Destructs the neural network
@@ -78,6 +80,7 @@ public:
      * @return The input layer
      */
     layers::InputLayer<TDevice>& inputLayer();
+    layers::intInputLayer<TDevice>& intinputLayer();
 
     /**
      * Returns the output layer
@@ -120,6 +123,11 @@ public:
      * @return The computed error
      */
     real_t calculateError() const;
+    // entropy ver.
+    real_t calculateEntropy() const;
+
+
+    void setWordDict(std::unordered_map<std::string, int> *wdic);
 
     /**
      * Stores the description of the layers in a JSON tree

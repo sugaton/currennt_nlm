@@ -97,7 +97,7 @@ namespace {
             return bp_error;
         }
     };
-    
+
 } // anonymous namespace
 } // namespace anonymous
 
@@ -141,6 +141,9 @@ namespace layers {
 
         return ce;
     }
+
+    template <typename TDevice>
+    real_t CePostOutputLayer<TDevice>::calculateEntropy(){ return 0.0; }
 
     template <typename TDevice>
     void CePostOutputLayer<TDevice>::computeForwardPass()

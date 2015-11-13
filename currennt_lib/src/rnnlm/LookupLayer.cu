@@ -1,6 +1,27 @@
 
 #include "LookupLayer.hpp"
+#include "intInputLayer.hpp"
+#include "../helpers/JsonClasses.hpp"
+#include "../Configuration.hpp"
 
+#include <stdexcept>
+#include <memory>
+#include <climits>
+#include <set>
+#include <map>
+#include <iterator>
+#include <iostream>
+#include <algorithm>
+
+#include <boost/random/normal_distribution.hpp>
+#include <boost/random/uniform_real_distribution.hpp>
+#include <boost/random/mersenne_twister.hpp>
+
+#include <thrust/transform.h>
+#include <thrust/functional.h>
+#include <thrust/sequence.h>
+#include <thrust/generate.h>
+#include <thrust/copy.h>
 
 namespace internal {
 namespace {
@@ -77,46 +98,66 @@ namespace layers {
         Layer<TDevice> &precedingLayer)
         : Layer<TDevice>           (layerChild, precedingLayer.parallelSequences(), precedingLayer.maxSeqLength())
         , m_precedingLayer         (precedingLayer)
-        , m_inputWeightsPerBlock   (inputWeightsPerBlock)
-        , m_internalWeightsPerBlock(internalWeightsPerBlock)
+        , m_wsize                  (layerChild->HasMember("w_size") ? static_cast<int>((*layerChild)["w_size"].GetInt()) : 0)
+        // , m_inputWeightsPerBlock   (inputWeightsPerBlock)
+        // , m_internalWeightsPerBlock(internalWeightsPerBlock)
         , m_bias                   (layerChild->HasMember("bias") ? static_cast<real_t>((*layerChild)["bias"].GetDouble()) : 0)
         , m_learningRate           (layerChild->HasMember("learningRate") ? static_cast<real_t>((*layerChild)["learningRate"].GetDouble()) : -1)
     {
-        // : TrainableLayer<TDevice>(layerChild, weightsSection, 1, 0, precedingLayer)
+
         Cpu::real_vector weights;
+        // m_wdict = std::map<std::string, int>();
+
+        int maximum_gpusize = (layerChild->HasMember("max_gpusize"))? static_cast<int>((*layerChild)["max_gpusize"].GetInt()) : INT_MAX;
+
+        // for random initialization
+        const Configuration &config = Configuration::instance();
+        static boost::mt19937 *gen = NULL;
+        if (!gen) {
+            gen = new boost::mt19937;
+            gen->seed(config.randomSeed());
+        }
+        boost::random::normal_distribution<real_t> dist(config.weightsDistributionNormalMean(), config.weightsDistributionNormalSigma());
 
         if (weightsSection.isValid() && weightsSection->HasMember(this->name().c_str())) {
             if (!weightsSection->HasMember(this->name().c_str()))
                 throw std::runtime_error(std::string("Missing weights section for layer '") + this->name() + "'");
             const rapidjson::Value &weightsChild = (*weightsSection)[this->name().c_str()];
-            if (!weightsChild.IsObject())
-                throw std::runtime_error(std::string("Weights section for layer '") + this->name() + "' is not an object");
+            // if (!weightsChild.IsObject())
+            //     throw std::runtime_error(std::string("Weights section for layer '") + this->name() + "' is not an object");
 
-            if (!weightsChild.HasMember("input") || !weightsChild["input"].IsArray())
-                throw std::runtime_error(std::string("Missing array 'weights/") + this->name() + "/input'");
+            int arraysize = 0;
+            for (rapidjson::Value::ConstValueIterator eit = weightsChild.Begin(); eit != weightsChild.End(); ++eit){
+                ++arraysize;
+            }
+            m_wsize = std::max(arraysize, m_wsize);
+            weights.resize( m_wsize * this->size());
 
-            const rapidjson::Value &inputWeightsChild    = weightsChild["input"];
+            int c = 0;
+            for (rapidjson::Value::ConstValueIterator eit = weightsChild.Begin(); eit != weightsChild.End(); ++eit){
+                // const rapidjson::Value embedingsSection = *(eit);
+                if (!eit->HasMember("name"))
+                    throw std::runtime_error(std::string("Missing embedings section for layer '") + this->name() + "'");
+                if (! eit->HasMember("id"))
+                    throw std::runtime_error("Missing embeddings id for lookup layer.");
+                std::string word = (*eit)["name"].GetString();
+                int id = (*eit)["id"].GetInt();
+                m_wdict[word] = id;
 
-            if (inputWeightsChild.Size() != this->size() * inputWeightsPerBlock * m_precedingLayer.size())
-                throw std::runtime_error(std::string("Invalid number of input weights for layer '") + this->name() + "'");
-
-            weights.reserve(inputWeightsChild.Size());
-
-            for (rapidjson::Value::ConstValueIterator it = inputWeightsChild.Begin(); it != inputWeightsChild.End(); ++it)
-                weights.push_back(static_cast<real_t>(it->GetDouble()));
+                const rapidjson::Value &array = (*eit)["array"];
+                for (rapidjson::Value::ConstValueIterator it = array.Begin(); it != array.End(); ++it)
+                    weights.push_back(static_cast<real_t>(it->GetDouble()));
+            }
+            c = (int)m_wdict.size();
+            if (c < m_wsize){
+                for (size_t i = c * this->size(); i < weights.size(); ++i)
+                    weights[i] = dist(*gen);
+            }
         }
         // create random weights if no weights are given in the network file
         else {
-            // ???? size?
-            weights.resize(this->size() *  this->curMaxSeqLength() * this->parallelSequences());
 
-            const Configuration &config = Configuration::instance();
-
-            static boost::mt19937 *gen = NULL;
-            if (!gen) {
-                gen = new boost::mt19937;
-                gen->seed(config.randomSeed());
-            }
+            weights.resize(m_wsize * this->size());
 
             if (config.weightsDistributionType() == Configuration::DISTRIBUTION_UNIFORM) {
                 real_t range = config.weightsDistributionUniformMax() - config.weightsDistributionUniformMin();
@@ -125,22 +166,95 @@ namespace layers {
                     weights[i] = dist(*gen) + config.weightsDistributionUniformMin();
             }
             else {
-                boost::random::normal_distribution<real_t> dist(config.weightsDistributionNormalMean(), config.weightsDistributionNormalSigma());
                 for (size_t i = 0; i < weights.size(); ++i)
                     weights[i] = dist(*gen);
             }
         }
+        m_weightUpdates = real_vector(this->parallelSequences() * this->maxSeqLength() * this->size());
         // making embeddings
         Cpu::real_vector tmp;
         tmp.resize(this->size());
+        m_embeddings.reserve( m_wsize );
+        // printf("%d\n", );
         int i = 0;
-        while ( i * this->size() >  weights.size() ){
+        while ( i * this->size() <  weights.size() ){
             thrust::copy(
                 weights.begin() + i * this->size(),
                 weights.begin() + (i+1) * this->size(),  //? need -1 ?
                 tmp.begin());
-            m_embeddings.push_back( std::make_unique<Embedding>(tmp, typeid(TDevice).name) );
+            // m_wdict should assign lower id to more frequent word
+            if ( i * this->size() > maximum_gpusize){
+                std::unique_ptr<helpers::Embedding<TDevice> > newemb(new helpers::Embedding<TDevice>(&tmp, std::string(typeid(Cpu).name()) ));
+                m_embeddings.push_back( std::move(newemb) );
+            }
+            else{
+                std::unique_ptr<helpers::Embedding<TDevice> > newemb(new helpers::Embedding<TDevice>(&tmp, std::string(typeid(TDevice).name()) ));
+                m_embeddings.push_back( std::move(newemb) );
+            }
+            ++i;
         }
+        m_device_vectors.reserve( this->parallelSequences() * this->maxSeqLength() );
+        for (int i = 0; i < this->parallelSequences() * this->maxSeqLength(); ++i){
+            std::unique_ptr<real_vector> p_vec = std::unique_ptr<real_vector>(new real_vector(this->size()));
+            m_device_vectors.push_back(std::move(p_vec));
+        }
+
+    }
+
+    // if embedings are loaded from json file, we should align
+    template <typename TDevice>
+    void LookupLayer<TDevice>::setWordDict(std::map<std::string, int> *wdic)
+    {
+       /*
+        // for random initialization
+        const Configuration &config = Configuration::instance();
+        static boost::mt19937 *gen = NULL;
+        if (!gen) {
+            gen = new boost::mt19937;
+            gen->seed(config.randomSeed());
+        }
+        boost::random::normal_distribution<real_t> dist(config.weightsDistributionNormalMean(), config.weightsDistributionNormalSigma());
+        auto _rand =  [&]{ return dist(*gen); };
+
+        std::vector< std::unique_ptr<helpers::Embedding<TDevice>> > new_embeddings;
+        new_embeddings.resize(m_embeddings.size());
+
+        std::set<int> unplaced;
+        for (int i = 0; i < m_embeddings.size(); ++i)
+            unplaced.emplace(i);
+
+        for (auto it = wdic->begin(); it != wdic->end(); ++it){
+            std::string word = it->first;
+            int wid = it->second;
+            auto wordIt = m_wdict.find(word);
+            if (wordIt == wdic->end()){
+                // we should use this space for another embedding
+                // thus re-initialization randomly
+                Cpu::real_vector h_tmp;
+                thrust::generate(h_tmp.begin(), h_tmp.end(), _rand);
+                real_vector tmp = h_tmp;
+                m_embeddings[wid]->replace(&tmp);
+                continue;
+            }
+
+            int newid = wordIt->second;
+            new_embeddings[newid] = std::move(m_embeddings[wid]);
+            unplaced.erase(newid);
+        }
+        //operation for remaining word
+        for (int i = 0; i < m_embeddings.size(); ++i){ // unique_ptr
+            if( m_embeddings.at(i) == nullptr ) // already moved
+                continue;
+            int nextid = *(unplaced.begin());
+            new_embeddings[nextid] = std::move(m_embeddings.at(i));
+            unplaced.erase(nextid);
+        }
+        // restore embeddings in m_embeddings
+        for (int i = 0; i < new_embeddings.size(); ++i){
+            m_embeddings[i] = std::move(new_embeddings[i]);
+        }
+        */  // no need
+        m_wdict = *(wdic);
     }
 
     template <typename TDevice>
@@ -159,18 +273,47 @@ namespace layers {
         return s;
     }
 
+    // ********************
+    //this is same as which is defined inLookupLayer
+    template <typename TDevice>
+    Layer<TDevice>& LookupLayer<TDevice>::precedingLayer()
+    {
+        return m_precedingLayer;
+    }
+
+    template <typename TDevice>
+    const Layer<TDevice>& LookupLayer<TDevice>::precedingLayer() const
+    {
+        return m_precedingLayer;
+    }
+
+    template <typename TDevice>
+    real_t LookupLayer<TDevice>::learningRate() const
+    {
+        return m_learningRate;
+    }
+
+    template <typename TDevice>
+    const typename LookupLayer<TDevice>::real_vector& LookupLayer<TDevice>::weightUpdates() const
+    {
+        return m_weightUpdates;
+    }
+    // ********************
+
     template <typename TDevice>
     void LookupLayer<TDevice>::computeForwardPass()
     {
         // collect outputs from preceding layer
         {{
             // i wanna write like ...
-            real_vector& emb;
             int i = 0;
-            for (int w: this->precedingLayer().outputs()){
+            intInputLayer<TDevice>* layer =  dynamic_cast<intInputLayer<TDevice>*>(&(this->precedingLayer()));
+            if (!layer)  // TODO throw runtime error
+              throw std::runtime_error("the input of LookupLayer should be int. (use intInputLayer)");
+            for (int w: layer->intoutputs()){
                 // need condition ?
-                emb = this->embeddings(w, i);  // maybe &this->embeddings(w) returns cpu::real_vector while emb is gpu::real_vector
-                thrust::copy(emb.begin(), emb.end(), this->_outputs().begin() + i * this->size());
+                real_vector* emb = this->embeddings(w, i);  // maybe &this->embeddings(w) returns cpu::real_vector while emb is gpu::real_vector
+                thrust::copy(emb->begin(), emb->end(), this->_outputs().begin() + i * this->size());
                 ++i;
             }
         }}
@@ -189,23 +332,87 @@ namespace layers {
     }
 
     template <typename TDevice>
-    real_vector& LookupLayer<TDevice>::embeddings(const int w, const int i) {
+    void LookupLayer<TDevice>::exportWeights(const helpers::JsonValue &weightsObject, const helpers::JsonAllocator &allocator)
+    {
+        if (!weightsObject->IsObject())
+            throw std::runtime_error("The JSON value is not an object");
+
+        // do nothing if we don't have any weights
+
+        rapidjson::Value weightsSection(rapidjson::kArrayType);
+        // add each embedding for weightSection
+        for (auto it = m_wdict.begin(); it != m_wdict.end(); ++it){
+            rapidjson::Value embeddingsSection(rapidjson::kObjectType);
+            std::string word = it->first;
+            int w = it->second;
+            real_vector* vec = this->get_emb(w)->get_data();
+            // create and fill the weight arrays
+            rapidjson::Value embeddingWeightsArray(rapidjson::kArrayType);
+            int emb_size = this->size();
+            embeddingWeightsArray.Reserve(emb_size, allocator);
+            for (int i = 0; i < emb_size; ++i)
+                embeddingWeightsArray.PushBack((*vec)[i], allocator);
+            // fill the weights subsection
+            embeddingsSection.AddMember("name", word.c_str(), allocator);
+            embeddingsSection.AddMember("id", w, allocator);
+            embeddingsSection.AddMember("array", embeddingWeightsArray, allocator);
+            weightsSection.PushBack(embeddingsSection, allocator);
+        }
+
+        // add the weights section tot he weights object
+        weightsObject->AddMember(this->name().c_str(), weightsSection, allocator);
+    }
+
+    template <typename TDevice>
+    void LookupLayer<TDevice>::exportDict(const helpers::JsonDocument &Object, const helpers::JsonAllocator &allocator) const
+    {
+
+        rapidjson::Value dictSection(rapidjson::kArrayType);
+        // we should storing order
+        std::vector<std::pair<std::string, int>> v(m_wdict.size());
+        std::copy(m_wdict.begin(), m_wdict.end(), v.begin());
+        std::sort(v.begin(), v.end(),
+                  [](const std::pair<std::string, int> &l, const std::pair<std::string, int> &r){
+                      return l.second < r.second;
+                  });
+        for (auto it = v.begin(); it != v.end(); ++it){
+            std::string word = it->first;
+            int wordid = it->second;
+            rapidjson::Value wordObject(rapidjson::kObjectType);
+            wordObject.AddMember("name", word.c_str(), allocator);
+            wordObject.AddMember("id", wordid, allocator);
+            dictSection.PushBack(wordObject, allocator);
+        }
+        Object->AddMember("word_dict", dictSection, allocator);
+    }
+
+    template <typename TDevice>
+    LookupLayer<TDevice>::real_vector* LookupLayer<TDevice>::embeddings(const int w, const int i) {
         if ( w > (int)(m_embeddings.size()) )
             throw std::runtime_error("Unknown word appeared not as UNK");
-        Embedding& emb = m_embeddings.at(w);
-        if ( emb.type() == typeid(TDevice).name() )
-            return m_embeddings.at(w)->get_data<TDevice>();
+        // printf("word: %d\n", m_embeddings.size(), w);
+        helpers::Embedding<TDevice>* emb = m_embeddings.at(w).get();
+        if ( emb->type() == typeid(TDevice).name() )
+            return emb->get_data();
         // else
             // m_device_vectors.push_back(real_vector());
-            return m_embeddings.at(w)->get_data<TDevice>( &(m_device_vectors.at(i)) );
+            return emb->get_data( m_device_vectors.at(i).get() );
     };
 
 
     template <typename TDevice>
-    Embedding& LookupLayer<TDevice>::get_emb(const int w)
+    helpers::Embedding<TDevice>* LookupLayer<TDevice>::get_emb(const int w)
     {
-        return m_embeddings.at(w);
+        return m_embeddings.at(w).get();
     }
+
+
+    template <typename TDevice>
+    typename LookupLayer<TDevice>::real_vector& LookupLayer<TDevice>::_weightUpdates()
+    {
+        return m_weightUpdates;
+    }
+
 
     // explicit template instantiations
     template class LookupLayer<Cpu>;

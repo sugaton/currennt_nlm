@@ -36,8 +36,8 @@ namespace optimizers {
      * @param TDevice The computation device (Cpu or Gpu)
      *********************************************************************************************/
     template <typename TDevice>
-    class lmSteepestDescentOptimizer : public Optimizer<TDevice>
-    {
+    class lmSteepestDescentOptimizer : public lmOptimizer<TDevice>
+        {
         typedef typename TDevice::real_vector real_vector;
 
     private:
@@ -68,9 +68,9 @@ namespace optimizers {
          */
         lmSteepestDescentOptimizer(
             NeuralNetwork<TDevice> &neuralNetwork,
-            data_sets::DataSet     &trainingSet,
-            data_sets::DataSet     &validationSet,
-            data_sets::DataSet     &testSet,
+            data_sets::Corpus     &trainingSet,
+            data_sets::Corpus     &validationSet,
+            data_sets::Corpus     &testSet,
             int maxEpochs,
             int maxEpochsNoBest,
             int validateEvery,

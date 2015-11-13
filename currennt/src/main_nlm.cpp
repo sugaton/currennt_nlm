@@ -26,6 +26,7 @@
  ***/
 
 
+#include "../../currennt_lib/src/helpers/Matrix.hpp"
 #include "../../currennt_lib/src/Configuration.hpp"
 #include "../../currennt_lib/src/NeuralNetwork.hpp"
 #include "../../currennt_lib/src/layers/LstmLayer.hpp"
@@ -94,13 +95,14 @@ enum data_set_type
 
 // helper functions (implementation below)
 void readJsonFile(rapidjson::Document *doc, const std::string &filename);
-boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType);
+void loadDict(rapidjson::Document *doc, std::unordered_map<std::string, int> *p_dict);
+boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, std::unordered_map<std::string, int>* p_map=NULL, int constructDict = 0);
 template <typename TDevice> void printLayers(const NeuralNetwork<TDevice> &nn);
-template <typename TDevice> void printOptimizer(const optimizers::Optimizer<TDevice> &optimizer);
+template <typename TDevice> void printOptimizer(const optimizers::lmOptimizer<TDevice> &optimizer);
 template <typename TDevice> void saveNetwork(const NeuralNetwork<TDevice> &nn, const std::string &filename);
 void createModifiedTrainingSet(data_sets::Corpus *trainingSet, int parallelSequences, bool outputsToClasses, boost::mutex &swapTrainingSetsMutex);
-template <typename TDevice> void saveState(const NeuralNetwork<TDevice> &nn, const optimizers::Optimizer<TDevice> &optimizer, const std::string &infoRows);
-template <typename TDevice> void restoreState(NeuralNetwork<TDevice> *nn, optimizers::Optimizer<TDevice> *optimizer, std::string *infoRows);
+template <typename TDevice> void saveState(const NeuralNetwork<TDevice> &nn, const optimizers::lmOptimizer<TDevice> &optimizer, const std::string &infoRows);
+template <typename TDevice> void restoreState(NeuralNetwork<TDevice> *nn, optimizers::lmOptimizer<TDevice> *optimizer, std::string *infoRows);
 std::string printfRow(const char *format, ...);
 
 
@@ -117,6 +119,8 @@ int trainerMain(const Configuration &config)
         readJsonFile(&netDoc, networkFile);
         printf("done.\n");
         printf("\n");
+        std::unordered_map<std::string, int> _wordDict;
+        loadDict(&netDoc, &_wordDict);
 
         // load data sets
         boost::shared_ptr<data_sets::Corpus> trainingSet    = boost::make_shared<data_sets::Corpus>();
@@ -125,13 +129,22 @@ int trainerMain(const Configuration &config)
         boost::shared_ptr<data_sets::Corpus> feedForwardSet = boost::make_shared<data_sets::Corpus>();
 
         if (config.trainingMode()) {
-            trainingSet = loadDataSet(DATA_SET_TRAINING);
+            // not efficient
+            if (_wordDict.empty()){
+                trainingSet = loadDataSet(DATA_SET_TRAINING);
+                _wordDict = *(trainingSet->dict()); // copy from trainingSet
+            }
+            else{
+                trainingSet = loadDataSet(DATA_SET_TRAINING, &_wordDict, 1);
+                _wordDict = *(trainingSet->dict());
+            }
 
+            // use same wordDict as used in trainingSet
             if (!config.validationFiles().empty())
-                validationSet = loadDataSet(DATA_SET_VALIDATION);
+                validationSet = loadDataSet(DATA_SET_VALIDATION, &_wordDict);
 
             if (!config.testFiles().empty())
-                testSet = loadDataSet(DATA_SET_TEST);
+                testSet = loadDataSet(DATA_SET_TEST, &_wordDict);
         }
         else {
             feedForwardSet = loadDataSet(DATA_SET_FEEDFORWARD);
@@ -158,6 +171,7 @@ int trainerMain(const Configuration &config)
         inputSize = trainingSet->inputPatternSize();
         outputSize = trainingSet->outputPatternSize();
         NeuralNetwork<TDevice> neuralNetwork(netDoc, parallelSequences, maxSeqLength, inputSize, outputSize);
+        neuralNetwork.setWordDict(&_wordDict);
 
         if (!trainingSet->empty() && trainingSet->outputPatternSize() != neuralNetwork.postOutputLayer().size())
             throw std::runtime_error("Post output layer size != target pattern size of the training set");
@@ -184,8 +198,8 @@ int trainerMain(const Configuration &config)
         if (config.trainingMode()) {
             printf("Creating the optimizer... ");
             fflush(stdout);
-            boost::scoped_ptr<optimizers::Optimizer<TDevice> > optimizer;
-            optimizers::SteepestDescentOptimizer<TDevice> *sdo;
+            boost::scoped_ptr<optimizers::lmOptimizer<TDevice> > optimizer;
+            optimizers::lmSteepestDescentOptimizer<TDevice> *sdo;
 
             switch (config.optimizer()) {
             case Configuration::OPTIMIZER_STEEPESTDESCENT:
@@ -581,8 +595,26 @@ void readJsonFile(rapidjson::Document *doc, const std::string &filename)
         throw std::runtime_error(std::string("Parse error: ") + doc->GetParseError());
 }
 
+void loadDict(rapidjson::Document *doc, std::unordered_map<std::string, int> *p_dict)
+{
+    if (! doc->HasMember("word_dict") )
+        return;
+    const rapidjson::Value &wordlist = (*doc)["word_dict"];
+    int c = 0;
+    for (rapidjson::Value::ConstValueIterator wordObject = wordlist.Begin(); wordObject != wordlist.End(); ++wordObject) {
+        if (! wordObject->HasMember("name"))
+            throw std::runtime_error("A member of word_dict section doesn't have name property.");
+        std::string word = (*wordObject)["name"].GetString();
+        if (! wordObject->HasMember("id"))
+            throw std::runtime_error("A member of word_dict section doesn't have id property.");
+        int id = (*wordObject)["id"].GetInt();
+        (*p_dict)[word] = id;
+    }
+    printf("%lld words are loaded from json file.", (long long int) p_dict->size());
 
-boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType)
+}
+
+boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, std::unordered_map<std::string, int>* p_map, int constructDict)
 {
     std::string type;
     std::vector<std::string> filenames;
@@ -610,18 +642,21 @@ boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType)
         filenames = Configuration::instance().validationFiles();
         fraction = Configuration::instance().validationFraction();
         cachePath = Configuration::instance().cachePath();
+        truncSeqLength = Configuration::instance().truncateSeqLength();
         break;
 
     case DATA_SET_TEST:
         type     = "test set";
         filenames = Configuration::instance().testFiles();
         fraction = Configuration::instance().testFraction();
+        truncSeqLength = Configuration::instance().truncateSeqLength();
         break;
 
     default:
         type     = "feed forward input set";
         filenames = Configuration::instance().feedForwardInputFiles();
         noiseDev = Configuration::instance().inputNoiseSigma();
+        truncSeqLength = Configuration::instance().truncateSeqLength();
         break;
     }
 
@@ -638,7 +673,7 @@ boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType)
     boost::shared_ptr<data_sets::Corpus> ds = boost::make_shared<data_sets::Corpus>(
         filenames,
         Configuration::instance().parallelSequences(), fraction, truncSeqLength,
-        fracShuf, seqShuf, noiseDev, cachePath);
+        fracShuf, seqShuf, noiseDev, cachePath, p_map, constructDict);
 
     printf("done.\n");
     printf("Loaded fraction:  %d%%\n",   (int)(fraction*100));
@@ -674,9 +709,9 @@ void printLayers(const NeuralNetwork<TDevice> &nn)
 
 
 template <typename TDevice>
-void printOptimizer(const Configuration &config, const optimizers::Optimizer<TDevice> &optimizer)
+void printOptimizer(const Configuration &config, const optimizers::lmOptimizer<TDevice> &optimizer)
 {
-    if (dynamic_cast<const optimizers::SteepestDescentOptimizer<TDevice>*>(&optimizer)) {
+    if (dynamic_cast<const optimizers::lmSteepestDescentOptimizer<TDevice>*>(&optimizer)) {
         printf("Optimizer type: Steepest descent with momentum\n");
         printf("Max training epochs:       %d\n", config.maxEpochs());
         printf("Max epochs until new best: %d\n", config.maxEpochsNoBest());
@@ -710,7 +745,7 @@ void saveNetwork(const NeuralNetwork<TDevice> &nn, const std::string &filename)
 
 
 template <typename TDevice>
-void saveState(const NeuralNetwork<TDevice> &nn, const optimizers::Optimizer<TDevice> &optimizer, const std::string &infoRows)
+void saveState(const NeuralNetwork<TDevice> &nn, const optimizers::lmOptimizer<TDevice> &optimizer, const std::string &infoRows)
 {
     // create the JSON document
     rapidjson::Document jsonDoc;
@@ -753,7 +788,7 @@ void saveState(const NeuralNetwork<TDevice> &nn, const optimizers::Optimizer<TDe
 
 
 template <typename TDevice>
-void restoreState(NeuralNetwork<TDevice> *nn, optimizers::Optimizer<TDevice> *optimizer, std::string *infoRows)
+void restoreState(NeuralNetwork<TDevice> *nn, optimizers::lmOptimizer<TDevice> *optimizer, std::string *infoRows)
 {
     rapidjson::Document jsonDoc;
     readJsonFile(&jsonDoc, Configuration::instance().continueFile());

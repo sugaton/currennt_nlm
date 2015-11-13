@@ -68,10 +68,35 @@ namespace data_sets {
         return m_patTypes;
     }
     */
-    const Cpu::int_vector& CorpusFraction::inputs() const
+    // const Cpu::int_vector& CorpusFraction::inputs() const
+    // {
+    //     return m_inputs;
+    // }
+
+
+    void CorpusFraction::set_inputPatternSize(int inputPatternSize)
     {
-        return m_inputs;
+        DataSetFraction::set_inputPatternSize(inputPatternSize);
     }
+
+    void CorpusFraction::set_outputPatternSize(int outputPatternSize)
+    {
+        DataSetFraction::set_outputPatternSize(outputPatternSize);
+    }
+
+    void CorpusFraction::set_maxSeqLength(int maxSeqLength)
+    {
+        DataSetFraction::set_maxSeqLength(maxSeqLength);
+    }
+    int CorpusFraction::set_minSeqLength(int minSeqLength)
+    {
+        DataSetFraction::set_minSeqLength(minSeqLength);
+    }
+    void CorpusFraction::set_seqInfo(DataSetFraction::seq_info_t& seqInfo)
+    {
+        DataSetFraction::set_seqInfo(seqInfo);
+    }
+
 
     /*
     const Cpu::real_vector& CorpusFraction::outputs() const

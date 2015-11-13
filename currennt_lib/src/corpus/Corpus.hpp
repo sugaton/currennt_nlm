@@ -20,8 +20,8 @@
  * along with CURRENNT.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-#ifndef DATA_SETS_DATASET_HPP
-#define DATA_SETS_DATASET_HPP
+#ifndef CORPUS_HPP
+#define CORPUS_HPP
 
 #include "CorpusFraction.hpp"
 
@@ -67,7 +67,12 @@ namespace data_sets {
         Cpu::int_vector _loadTargetClassesFromCache(const sequence_t &seq);
         boost::shared_ptr<CorpusFraction> _makeFractionTask(int firstSeqIdx);
         boost::shared_ptr<CorpusFraction> _makeFirstFractionTask();
-        Cpu::int_vector&& _makeInputFromLine(std::string line, int *loadLength);
+        void _makeWordDict(const std::vector<std::string> &txtfiles);
+        // Cpu::int_vector&& _makeInputFromLine(const std::string& line, int *loadLength);
+        // Cpu::int_vector&& _makeTargetFromLine(const std::string& line);
+        Cpu::int_vector _makeInputFromLine(const std::string& line, int *loadLength);
+        Cpu::int_vector _makeTargetFromLine(const std::string& line);
+        int _getWordId(const std::string& word);
 
     private:
         bool   m_fractionShuffling;
@@ -93,7 +98,8 @@ namespace data_sets {
         boost::scoped_ptr<thread_data_t> m_threadData; // just because nvcc hates boost headers
         int m_curFirstSeqIdx;
         std::unordered_map<std::string, int> m_wordids;
-        int m_nextid;
+        bool m_fixed_wordDict;
+        long long int m_nextid;
 
     public:
         /**
@@ -102,20 +108,20 @@ namespace data_sets {
         Corpus();
 
         /**
-         * Loads the data set from a NetCDF file (filename.nc)
+         * Loads the data set from a raw txt file (filename.txt)
          *
-         * @param ncfile   The filename of the NetCDF file
          * @param parSeq   Number of parallel sequences
          * @param fraction Fraction of all sequences to load
          * @param fracShuf Apply fraction shuffling
          * @param seqShuf  Apply sequence shuffling
          * @param noiseDev Static noise deviation
+         * @param wordids  Pointer of fixed dictionary
          */
         Corpus(const std::vector<std::string> &ncfiles, int parSeq, real_t fraction=1,
             int truncSeqLength=0,
             bool fracShuf=false, bool seqShuf=false, real_t noiseDev=0,
-            std::string cachePath = "");
-
+            std::string cachePath = "",
+            std::unordered_map<std::string, int>* wordids=NULL, int constructDict = 0);
         /**
          * Destructor
          */
@@ -214,6 +220,13 @@ namespace data_sets {
          * @return vector of output standard deviations
          */
         Cpu::real_vector outputStdevs() const;
+
+        /**
+         * Returns the pointer of m_wordids (word-id dictionary)
+         * this function will be used for make validateSet and testSet.
+         * @return pointer of unordered_map (m_wordids)
+         */
+        std::unordered_map<std::string, int>* dict();
 
     };
 

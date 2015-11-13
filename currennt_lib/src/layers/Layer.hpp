@@ -26,6 +26,7 @@
 #include "../Types.hpp"
 #include "../data_sets/DataSetFraction.hpp"
 #include "../helpers/JsonClassesForward.hpp"
+#include <thrust/transform_reduce.h>
 
 #include <string>
 
@@ -41,6 +42,7 @@ namespace layers {
     class Layer
     {
         typedef typename TDevice::real_vector    real_vector;
+        typedef typename TDevice::int_vector     int_vector;
         typedef typename TDevice::pattype_vector pattype_vector;
 
     private:
@@ -53,11 +55,13 @@ namespace layers {
         int               m_curMinSeqLength;
         int               m_curNumSeqs;
         real_vector       m_outputs;
+        int_vector        m_intoutputs;
         real_vector       m_outputErrors;
         pattype_vector    m_patTypes;
 
     protected:
         real_vector& _outputs();
+        int_vector& _intoutputs();
 
     public:
         /**
@@ -84,7 +88,7 @@ namespace layers {
 
         /**
          * Returns the number of blocks in the layer
-         * 
+         *
          * @return The number of blocks in the layer
          */
         int size() const;
@@ -133,7 +137,7 @@ namespace layers {
 
         /**
          * Returns the pattern types vector
-         * 
+         *
          * @return The pattern types vector
          */
         const pattype_vector& patTypes() const;
@@ -151,6 +155,13 @@ namespace layers {
          * @return The outputs
          */
         virtual real_vector& outputs();
+
+        /**
+         * Returns the outputs of the int-layer
+         *
+         * @return The outputs
+         */
+        virtual int_vector& intoutputs();
 
         /**
          * Loads sequences from a data set

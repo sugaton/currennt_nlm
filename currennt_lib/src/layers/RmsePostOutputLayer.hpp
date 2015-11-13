@@ -52,7 +52,7 @@ namespace layers {
          * @param precedingLayer The layer preceding this one
          */
         RmsePostOutputLayer(
-            const helpers::JsonValue &layerChild, 
+            const helpers::JsonValue &layerChild,
             Layer<TDevice> &precedingLayer
             );
 
@@ -70,6 +70,7 @@ namespace layers {
          * @see PostOutputLayer::calculateError()
          */
         virtual real_t calculateError();
+        virtual real_t calculateEntropy();
 
         /**
          * @see Layer::computeForwardPass()

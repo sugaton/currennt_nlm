@@ -3,8 +3,9 @@
 #define LOOKUP_LAYER_HPP
 
 #include <memory>
+#include <map>
 
-#include "../layers/TrainableLayer.hpp"
+#include "../layers/Layer.hpp"
 #include "Embedding.hpp"
 
 
@@ -14,11 +15,24 @@ namespace layers {
      * Represents a feed forward layer in the neural network
      *
      * @param TDevice The computation device (Cpu or Gpu)
-     * @param TActFn  The activation function to use
      *********************************************************************************************/
     template <typename TDevice>
-    class LookupLayer : public TrainableLayer<TDevice>
+    class LookupLayer : public Layer<TDevice>
     {
+    typedef typename TDevice::real_vector real_vector;
+    private:
+        Layer<TDevice> &m_precedingLayer;
+        int m_wsize;
+
+        // need?
+        // const int    m_inputWeightsPerBlock;
+        // const int    m_internalWeightsPerBlock;
+        const real_t m_bias;
+        const real_t m_learningRate;
+        std::map<std::string, int> m_wdict;
+        // real_vector m_outputErrors;
+        // real_vector m_weights;
+        real_vector m_weightUpdates;
     public:
         /**
          * Constructs the Layer
@@ -38,6 +52,15 @@ namespace layers {
          */
         virtual ~LookupLayer();
 
+
+        void setWordDict(std::map<std::string, int> *wdic);
+        // from TrainableLayer
+        Layer<TDevice>& precedingLayer();
+        const Layer<TDevice>& precedingLayer() const;
+        real_t learningRate() const;
+        const real_vector& weightUpdates() const;
+        real_vector& _weightUpdates();
+
         /**
          * @see Layer::type()
          */
@@ -53,12 +76,24 @@ namespace layers {
          */
         virtual void computeBackwardPass();
 
-        real_vector embeddings(const int w);
+        /**
+         * export each word's embedding
+         */
+        void exportWeights(const helpers::JsonValue &weightsObject, const helpers::JsonAllocator &allocator);
+
+        /**
+         * export word list which registered in this table
+         */
+        void exportDict(const helpers::JsonDocument &Object, const helpers::JsonAllocator &allocator) const;
+
+        real_vector* embeddings(const int w, const int i);
+
+        helpers::Embedding<TDevice>* get_emb(const int w);
 
         // void clear_tmpvecs();
     private:
-        std::vector<std::unique_ptr<Embedding>> m_embeddings;
-        std::vector<real_vector> m_device_vectors;
+        std::vector< std::unique_ptr<helpers::Embedding<TDevice>> > m_embeddings;
+        std::vector<std::unique_ptr<real_vector>> m_device_vectors;
     };
 
 } // namespace layers

@@ -68,9 +68,12 @@ namespace data_sets {
         return m_patTypes;
     }
 
-    const Cpu::real_vector& DataSetFraction::inputs() const
+    const input_vector_type& DataSetFraction::inputs() const
     {
-        return m_inputs;
+        if (m_inputType)
+            return m_intinputs;
+        else
+            return m_inputs;
     }
 
     const Cpu::real_vector& DataSetFraction::outputs() const
@@ -81,6 +84,57 @@ namespace data_sets {
     const Cpu::int_vector& DataSetFraction::targetClasses() const
     {
         return m_targetClasses;
+    }
+
+    Cpu::int_vector* DataSetFraction::intinput()
+    {
+        return &m_intinputs;
+    }
+
+    const Cpu::int_vector& DataSetFraction::intinput_const() const
+    {
+        return m_intinputs;
+    }
+
+    void DataSetFraction::use_intInput()
+    {
+        m_inputType = 1;
+    }
+
+    void DataSetFraction::set_inputPatternSize(int inputPatternSize)
+    {
+        m_inputPatternSize = inputPatternSize;
+    }
+
+    void DataSetFraction::set_outputPatternSize(int outputPatternSize)
+    {
+        m_outputPatternSize = outputPatternSize;
+    }
+
+    void DataSetFraction::set_maxSeqLength(int maxSeqLength)
+    {
+        m_maxSeqLength = maxSeqLength;
+    }
+    int DataSetFraction::set_minSeqLength(int minSeqLength)
+    {
+        m_minSeqLength = minSeqLength;
+    }
+    void DataSetFraction::set_seqInfo(DataSetFraction::seq_info_t& seqInfo)
+    {
+        m_seqInfo.push_back(seqInfo);
+    }
+    void DataSetFraction::setTargetClasses(int posi, int value)
+    {
+        m_targetClasses[posi] = value;
+    }
+    void DataSetFraction::setPatTypes(int posi, char value)
+    {
+        m_patTypes[posi] = value;
+    }
+    void DataSetFraction::vectorResize(int parallelSequences, char pat, int num)
+    {
+        m_patTypes.resize(m_maxSeqLength * parallelSequences, pat);
+        m_targetClasses.resize(m_maxSeqLength * parallelSequences, num);
     }
 
 } // namespace data_sets

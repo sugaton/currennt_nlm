@@ -273,8 +273,8 @@ namespace data_sets {
         Cpu::int_vector v(seq.length * m_inputPatternSize);
 
         m_cacheFile.seekg(seq.inputsBegin);
-        m_cacheFile.read((char*)v.data(), sizeof(real_t) * v.size());
-        assert (m_cacheFile.tellg() - seq.inputsBegin == v.size() * sizeof(real_t));
+        m_cacheFile.read((char*)v.data(), sizeof(int) * v.size());
+        assert (m_cacheFile.tellg() - seq.inputsBegin == v.size() * sizeof(int));
 
         return v;
     }
@@ -310,34 +310,39 @@ namespace data_sets {
 
         //printf("(%d) Making task firstSeqIdx=%d...\n", (int)m_sequences.size(), firstSeqIdx);
         boost::shared_ptr<CorpusFraction> frac(new CorpusFraction);
-        frac->m_inputPatternSize  = m_inputPatternSize * context_length;
-        frac->m_outputPatternSize = m_outputPatternSize;
-        frac->m_maxSeqLength      = std::numeric_limits<int>::min();
-        frac->m_minSeqLength      = std::numeric_limits<int>::max();
+        // frac->m_inputPatternSize  = m_inputPatternSize * context_length;
+        frac->use_intInput();
+        frac->set_inputPatternSize(m_inputPatternSize * context_length);
+        // frac->m_outputPatternSize = m_outputPatternSize;
+        frac->set_outputPatternSize(m_outputPatternSize);
+        // frac->m_maxSeqLength      = std::numeric_limits<int>::min();
+        frac->set_maxSeqLength(std::numeric_limits<int>::min());
+        // frac->m_minSeqLength      = std::numeric_limits<int>::max();
+        frac->set_minSeqLength(std::numeric_limits<int>::max());
 
         // fill fraction sequence info
         for (int seqIdx = firstSeqIdx; seqIdx < firstSeqIdx + m_parallelSequences; ++seqIdx) {
             if (seqIdx < (int)m_sequences.size()) {
-                frac->m_maxSeqLength = std::max(frac->m_maxSeqLength, m_sequences[seqIdx].length);
-                frac->m_minSeqLength = std::min(frac->m_minSeqLength, m_sequences[seqIdx].length);
+                // frac->m_maxSeqLength = std::max(frac->m_maxSeqLength, m_sequences[seqIdx].length);
+                frac->set_maxSeqLength(std::max(frac->maxSeqLength(), m_sequences[seqIdx].length));
+                // frac->m_minSeqLength = std::min(frac->m_minSeqLength, m_sequences[seqIdx].length);
+                frac->set_minSeqLength(std::min(frac->maxSeqLength(), m_sequences[seqIdx].length));
 
                 CorpusFraction::seq_info_t seqInfo;
                 seqInfo.originalSeqIdx = m_sequences[seqIdx].originalSeqIdx;
                 seqInfo.length         = m_sequences[seqIdx].length;
                 seqInfo.seqTag         = m_sequences[seqIdx].seqTag;
 
-                frac->m_seqInfo.push_back(seqInfo);
+                // frac->m_seqInfo.push_back(seqInfo);
+                frac->set_seqInfo(seqInfo);
             }
         }
 
         // allocate memory for the fraction
-        frac->m_inputs  .resize(frac->m_maxSeqLength * m_parallelSequences * frac->m_inputPatternSize, 0);
-        frac->m_patTypes.resize(frac->m_maxSeqLength * m_parallelSequences, PATTYPE_NONE);
-
-        if (m_isClassificationData)
-            frac->m_targetClasses.resize(frac->m_maxSeqLength * m_parallelSequences, -1);
-        else
-            frac->m_outputs.resize(frac->m_maxSeqLength * m_parallelSequences * m_outputPatternSize);
+        // only m_inputs can be accessed directly
+        frac->intinput()->resize(frac->maxSeqLength() * m_parallelSequences * frac->inputPatternSize(), 0);
+        // resize of targetclass and patTypes
+        frac->vectorResize(m_parallelSequences, PATTYPE_NONE, -1);
 
         // load sequences from the cache file and create the fraction vectors
         for (int i = 0; i < m_parallelSequences; ++i) {
@@ -348,7 +353,7 @@ namespace data_sets {
 
             // inputs
             Cpu::int_vector inputs = _loadInputsFromCache(seq);
-            _addNoise(&inputs);
+            // _addNoise(&inputs);
             for (int timestep = 0; timestep < seq.length; ++timestep) {
                 int srcStart = m_inputPatternSize * timestep;
                 int offset_out = 0;
@@ -360,9 +365,9 @@ namespace data_sets {
                     // duplicate last time step if needed
                     else if (srcStart > m_inputPatternSize * (seq.length - 1))
                         srcStart = m_inputPatternSize * (seq.length - 1);
-                    int tgtStart = frac->m_inputPatternSize * (timestep * m_parallelSequences + i) + offset_out * m_inputPatternSize;
+                    int tgtStart = frac->inputPatternSize() * (timestep * m_parallelSequences + i) + offset_out * m_inputPatternSize;
                     //std::cout << "copy from " << srcStart << " to " << tgtStart << " size " << m_inputPatternSize << std::endl;
-                    thrust::copy_n(inputs.begin() + srcStart, m_inputPatternSize, frac->m_inputs.begin() + tgtStart);
+                    thrust::copy_n(inputs.begin() + srcStart, m_inputPatternSize, frac->intinput()->begin() + tgtStart);
                     ++offset_out;
                 }
             }
@@ -377,7 +382,8 @@ namespace data_sets {
                 int tgt = 0; // default class (make configurable?)
                 if (timestep >= output_lag)
                     tgt = targetClasses[timestep - output_lag];
-                frac->m_targetClasses[timestep * m_parallelSequences + i] = tgt;
+                // frac->m_targetClasses[timestep * m_parallelSequences + i] = tgt;
+                frac->setTargetClasses(timestep * m_parallelSequences + i, tgt);
             }
             // }
             // // outputs
@@ -407,13 +413,10 @@ namespace data_sets {
                 else
                     patType = PATTYPE_NORMAL;
 
-                frac->m_patTypes[timestep * m_parallelSequences + i] = patType;
+                // frac->m_patTypes[timestep * m_parallelSequences + i] = patType;
+                frac->setPatTypes(timestep * m_parallelSequences + i, patType);
             }
         }
-        /*std::cout << "inputs for data fraction: ";
-        thrust::copy(frac->m_inputs.begin(), frac->m_inputs.end(), std::ostream_iterator<real_t>(std::cout, ";"));
-        std::cout << std::endl;*/
-
         return frac;
     }
 
@@ -429,7 +432,24 @@ namespace data_sets {
         return _makeFractionTask(0);
     }
 
-    Cpu::int_vector&& Corpus::_makeInputFromLine(std::string line, int *loadLength)
+    int Corpus::_getWordId(const std::string& word)
+    {
+        auto it = m_wordids.find(word);
+        if ( it == m_wordids.end() ){
+            if (m_fixed_wordDict)
+                return m_wordids["<UNK>"];
+            // else, add word to dict
+            m_wordids[word] = m_nextid;
+            return m_nextid++;
+            // m_nextid++;
+        }
+        else {
+            // ids.push_back(it->second);
+            return it->second;
+        }
+    }
+
+    Cpu::int_vector Corpus::_makeInputFromLine(const std::string& line, int *loadLength)
     {
         std::stringstream ss(line);
         std::string word;
@@ -437,22 +457,69 @@ namespace data_sets {
         *loadLength = 0;
         std::deque<int> ids;
         while ( std::getline(ss, word, delim) ){
-            auto it = m_wordids.find(word);
-            if ( it == m_wordids.end() ){
-                m_wordids[word] = m_nextid;
-                ids.push_back(m_nextid);
-                m_nextid++;
-            }
-            else {
-                ids.push_back(*it);
-            }
+            ids.push_back(_getWordId(word));
             *loadLength += 1;
         }
         Cpu::int_vector vec(*loadLength);
+        vec[0] = m_wordids["<s>"];
         for ( int i = 0; i < *loadLength; ++i ){
-            vec.push_back(ids.at(i));
+            vec[i] = (ids.at(i));
         }
-        return std::move(vec);
+        // return std::move(vec);
+        return vec;
+    }
+
+    Cpu::int_vector Corpus::_makeTargetFromLine(const std::string& line)
+    {
+        std::stringstream ss(line);
+        std::string word;
+        char delim = ' ';
+        // *loadLength = 0;
+        int loadlength = 0;
+        std::deque<int> ids;
+        while ( std::getline(ss, word, delim) ){
+            ids.push_back(_getWordId(word));
+            ++loadlength;
+        }
+        Cpu::int_vector vec(loadlength);
+        for ( int i = 1; i < loadlength; ++i ){
+            vec[i-1] = (ids.at(i));
+        }
+        vec[loadlength-1] = (m_wordids["</s>"]);
+        return vec;
+    }
+
+    void Corpus::_makeWordDict(const std::vector<std::string> &txtfiles)
+    {
+        std::unordered_map<std::string, int> counter;
+        for (std::vector<std::string>::const_iterator f_itr = txtfiles.begin();
+            f_itr != txtfiles.end(); ++f_itr)
+        {
+            std::ifstream fin(*f_itr);
+            std::string line, word;
+            char delim = ' ';
+            while (std::getline(fin, line)){
+                std::stringstream ss(line);
+                while ( std::getline(ss, word, delim) ){
+                    if(m_wordids.find(word) == m_wordids.end()){
+                        auto it = counter.find(word);
+                        if (it == counter.end())
+                            counter[word] = 0;
+                        else
+                            counter[word] += 1;
+                    }
+                }
+            }
+        }
+        std::vector<std::pair<std::string, int>> v(counter.size());
+        std::copy(counter.begin(), counter.end(), v.begin());
+        std::sort(v.begin(), v.end(),
+                  [](const std::pair<std::string, int>& l, const std::pair<std::string, int> r){
+                      return l.second > r.second;
+                  });
+        for (std::pair<std::string, int> p : v){
+            m_wordids[p.first] = m_nextid++;
+        }
     }
 
     Corpus::Corpus()
@@ -471,7 +538,8 @@ namespace data_sets {
     {
     }
 
-    Corpus::Corpus(const std::vector<std::string> &txtfiles, int parSeq, real_t fraction, int truncSeqLength, bool fracShuf, bool seqShuf, real_t noiseDev, std::string cachePath)
+    Corpus::Corpus(const std::vector<std::string> &txtfiles, int parSeq, real_t fraction, int truncSeqLength, bool fracShuf, bool seqShuf, real_t noiseDev,
+                   std::string cachePath, std::unordered_map<std::string, int>* wordids, int constructDict)
         : m_fractionShuffling(fracShuf)
         , m_sequenceShuffling(seqShuf)
         , m_noiseDeviation   (noiseDev)
@@ -481,9 +549,18 @@ namespace data_sets {
         , m_maxSeqLength     (std::numeric_limits<int>::min())
         , m_curFirstSeqIdx   (-1)
         , m_nextid(0)
+        , m_inputPatternSize (1)
     {
         int ret;
         int ncid;
+
+        m_fixed_wordDict = false;
+        if (wordids != NULL){
+            m_wordids = *wordids;
+           if (!constructDict)
+                m_fixed_wordDict = true;
+            m_nextid = (long long int)m_wordids.size();
+        }
 
         if (fraction <= 0 || fraction > 1)
             throw std::runtime_error("Invalid fraction");
@@ -504,6 +581,17 @@ namespace data_sets {
 
         bool first_file = true;
 
+        if (!m_fixed_wordDict){
+            if (m_wordids.find("<s>") == m_wordids.end())
+                m_wordids["<s>"] = m_nextid++;
+            if (m_wordids.find("</s>") == m_wordids.end())
+                m_wordids["</s>"] = m_nextid++;
+            if (m_wordids.find("<UNK>") == m_wordids.end())
+                m_wordids["<UNK>"] = m_nextid++;
+            _makeWordDict(txtfiles);
+            m_fixed_wordDict = true;
+        }
+
         // read the *.nc files
         for (std::vector<std::string>::const_iterator f_itr = txtfiles.begin();
             f_itr != txtfiles.end(); ++f_itr)
@@ -511,138 +599,72 @@ namespace data_sets {
             std::vector<sequence_t> sequences;
 
             std::ifstream fin(*f_itr);
-            // if ((ret = nc_open(nc_itr->c_str(), NC_NOWRITE, &ncid)))
-            //     throw std::runtime_error(std::string("Could not open '") + *nc_itr + "': " + nc_strerror(ret));
 
-            // extract the patterns from the *.nc file
-            try {
-                // TODO after text file reading, we should fill these property
+            int seqidxCount = 0;
+            int k = 0;
+            int loadLength;
+            std::string line;
+            while ( std::getline(fin, line) ) {
+                // reading first
+                Cpu::int_vector inputs = _makeInputFromLine(line, &loadLength);
+                Cpu::int_vector targets = _makeTargetFromLine(line);
+                m_totalTimesteps += loadLength;
 
-                // int maxSeqTagLength = internal::readNcDimension(ncid, "maxSeqTagLength");
-                // if (first_file) {
-                //     m_isClassificationData = internal::hasNcDimension (ncid, "numLabels");
-                //     m_inputPatternSize     = internal::readNcDimension(ncid, "inputPattSize");
-                //
-                //     if (m_isClassificationData) {
-                //         int numLabels       = internal::readNcDimension(ncid, "numLabels");
-                //         m_outputPatternSize = (numLabels == 2 ? 1 : numLabels);
-                //     }
-                //     else {
-                //         m_outputPatternSize = internal::readNcDimension(ncid, "targetPattSize");
-                //     }
-                // }
-                // else {
-                //     if (m_isClassificationData) {
-                //         if (!internal::hasNcDimension(ncid, "numLabels"))
-                //             throw std::runtime_error("Cannot combine classification with regression NC");
-                //         int numLabels = internal::readNcDimension(ncid, "numLabels");
-                //         if (m_outputPatternSize != (numLabels == 2 ? 1 : numLabels))
-                //             throw std::runtime_error("Number of classes mismatch in NC files");
-                //     }
-                //     else {
-                //         if (m_outputPatternSize != internal::readNcDimension(ncid, "targetPattSize"))
-                //             throw std::runtime_error("Number of targets mismatch in NC files");
-                //     }
-                //     if (m_inputPatternSize != internal::readNcDimension(ncid, "inputPattSize"))
-                //         throw std::runtime_error("Number of inputs mismatch in NC files");
-                }
-
-                // int nSeq = internal::readNcDimension(ncid, "numSeqs");
-                // nSeq = (int)((real_t)nSeq * fraction);
-                // nSeq = std::max(nSeq, 1);
-
-                /*
-                int inputsBegin  = 0;
-                int targetsBegin = 0;
-                for (int i = 0; i < nSeq; ++i) {
-                    int seqLength = internal::readNcIntArray(ncid, "seqLengths", i);
-                    m_totalTimesteps += seqLength;
-
-                    std::string seqTag = internal::readNcStringArray(ncid, "seqTags", i, maxSeqTagLength);
-                    int k = 0;
-                    while (seqLength > 0) {
-                        sequence_t seq;
-                        // why is this field needed??
-                        seq.originalSeqIdx = k;
-                        // keep a minimum sequence length of 50% of truncation length
-                        if (truncSeqLength > 0 && seqLength > 1.5 * truncSeqLength)
-                            seq.length         = std::min(truncSeqLength, seqLength);
-                        else
-                            seq.length = seqLength;
-                        // TODO append index k
-                        seq.seqTag         = seqTag;
-                        //std::cout << "sequence #" << nSeq << ": " << seq.length << " steps" << std::endl;
-                        sequences.push_back(seq);
-                        seqLength -= seq.length;
-                        ++k;
-                    }
-                }*/
-
-                int seqidxCount = 0;
-                int k = 0;
-                int loadLength;
-                std::string line;
-                // for (std::vector<sequence_t>::iterator seq = sequences.begin(); seq != sequences.end(); ++seq) {
-                while ( std::getline(fin, line) ) {
+                // making sequence
+                int loaded = 0;
+                while (loadLength > 0){
                     sequence_t seq;
                     seq.originalSeqIdx = k;
                     seq.originalSeqIdx = seqidxCount;
-                    m_minSeqLength = std::min(m_minSeqLength, seq->length);
-                    m_maxSeqLength = std::max(m_maxSeqLength, seq->length);
 
                     // read input patterns and store them in the cache file
-                    seq->inputsBegin = m_cacheFile.tellp();
-                    // Cpu::real_vector inputs = internal::readNcPatternArray(ncid, "inputs", inputsBegin, seq->length, m_inputPatternSize);
-                    Cpu::int_vector &&inputs = _makeInputFromLine(line, &loadLength);
-                    seq->length = loadLength;
-                    m_cacheFile.write((const char*)inputs.data(), sizeof(int) * inputs.size());
-                    assert (m_cacheFile.tellp() - seq->inputsBegin == seq->length * sizeof(int));
+                    seq.inputsBegin = m_cacheFile.tellp();
+
+                    if (truncSeqLength > 0 && loadLength > 1.5 * truncSeqLength)
+                        seq.length = std::min(truncSeqLength, loadLength);
+                    else
+                        seq.length = loadLength;
+
+
+                    m_cacheFile.write((const char*)(inputs.data() + loaded), sizeof(int) * seq.length);
+                    assert (m_cacheFile.tellp() - seq.inputsBegin == seq.length * sizeof(int));
+
+
+                    m_minSeqLength = std::min(m_minSeqLength, seq.length);
+                    m_maxSeqLength = std::max(m_maxSeqLength, seq.length);
 
                     // read targets and store them in the cache file
-                    seq->targetsBegin = m_cacheFile.tellp();
+                    seq.targetsBegin = m_cacheFile.tellp();
 
-                    Cpu::int_vector targets = _makeTargetFromLine(line);
-                    m_cacheFile.write((const char*)targets.data(), sizeof(int) * targets.size());
-                    assert (m_cacheFile.tellp() - seq->targetsBegin == seq->length * sizeof(int));
-
-                    // no need
-                    // inputsBegin  += seq->length;
-                    // targetsBegin += seq->length;
-
+                    // Cpu::int_vector targets = _makeTargetFromLine(line);
+                    m_cacheFile.write((const char*)(targets.data() + loaded), sizeof(int) * seq.length);
+                    assert (m_cacheFile.tellp() - seq.targetsBegin == seq.length * sizeof(int));
                     sequences.push_back(seq);
                     ++k;
+                    loadLength -= seq.length;
+                    loaded += seq.length;
                 }
-
-                if (first_file) {
-                    // retrieve output means + standard deviations, if they exist
-                    try {
-                        m_outputMeans  = internal::readNcArray<real_t>(ncid, "outputMeans",  0, m_outputPatternSize);
-                        m_outputStdevs = internal::readNcArray<real_t>(ncid, "outputStdevs", 0, m_outputPatternSize);
-                    }
-                    catch (std::runtime_error& err) {
-                        // Will result in "do nothing" when output unstandardization is used ...
-                        m_outputMeans  = Cpu::real_vector(m_outputPatternSize, 0.0f);
-                        m_outputStdevs = Cpu::real_vector(m_outputPatternSize, 1.0f);
-                    }
-                }
-
-                // create next fraction data and start the thread
-                m_threadData.reset(new thread_data_t);
-                m_threadData->finished  = false;
-                m_threadData->terminate = false;
-                m_threadData->thread    = boost::thread(&Corpus::_nextFracThreadFn, this);
-            }
-            catch (const std::exception&) {
-                throw;
             }
 
-            // append sequence structs from this nc file
+            if (first_file) {
+                m_outputMeans  = Cpu::real_vector(m_outputPatternSize, 0.0f);
+                m_outputStdevs = Cpu::real_vector(m_outputPatternSize, 1.0f);
+                // }
+            }
+
+            // create next fraction data and start the thread
+            m_threadData.reset(new thread_data_t);
+            m_threadData->finished  = false;
+            m_threadData->terminate = false;
+            m_threadData->thread    = boost::thread(&Corpus::_nextFracThreadFn, this);
+
             m_sequences.insert(m_sequences.end(), sequences.begin(), sequences.end());
 
             first_file = false;
         } // txt file loop
 
         m_totalSequences = m_sequences.size();
+        m_outputPatternSize = m_wordids.size();
         // sort sequences by length
         if (Configuration::instance().trainingMode())
             std::sort(m_sequences.begin(), m_sequences.end(), internal::comp_seqs);
@@ -753,6 +775,11 @@ namespace data_sets {
     std::string Corpus::cacheFileName() const
     {
         return m_cacheFileName;
+    }
+
+    std::unordered_map<std::string, int>* Corpus::dict()
+    {
+        return &m_wordids;
     }
 
 } // namespace data_sets

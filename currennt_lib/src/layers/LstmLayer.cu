@@ -254,7 +254,7 @@ namespace {
                 real_t nextCellStateErr = cellStateErrors[outputIdx - prevOutputDistance];
                 real_t nextIgDelta      = igDeltas       [outputIdx - prevOutputDistance];
                 real_t nextFgDelta      = fgDeltas       [outputIdx - prevOutputDistance];
-                
+
                 real_t igPeepWeight = igPeepWeights[blockIdx];
                 real_t fgPeepWeight = fgPeepWeights[blockIdx];
 
@@ -300,23 +300,23 @@ namespace {
         real_t bias;
 
         const real_t *plOutputs;
-        const real_t *fwOutputs;   
-        const real_t *bwOutputs;   
+        const real_t *fwOutputs;
+        const real_t *bwOutputs;
         const real_t *fwCellStates;
         const real_t *bwCellStates;
-        const real_t *fwNiDeltas;  
-        const real_t *bwNiDeltas;  
-        const real_t *fwIgDeltas;  
-        const real_t *bwIgDeltas;  
-        const real_t *fwFgDeltas;  
-        const real_t *bwFgDeltas;  
-        const real_t *fwOgDeltas;  
-        const real_t *bwOgDeltas;  
+        const real_t *fwNiDeltas;
+        const real_t *bwNiDeltas;
+        const real_t *fwIgDeltas;
+        const real_t *bwIgDeltas;
+        const real_t *fwFgDeltas;
+        const real_t *bwFgDeltas;
+        const real_t *fwOgDeltas;
+        const real_t *bwOgDeltas;
 
         __host__ __device__ real_t operator() (const int &weightIdx) const
         {
             // determine the weight type
-            // 
+            //
             // weightType = 0bXXYY with XX = {input, bias, internal, peephole}
             //                     and  YY = {NI, IG, FG, OG}
             //
@@ -344,7 +344,7 @@ namespace {
             int weightType = (int)(weightIdx >= 0                     + 1 * inwc) +
                              (int)(weightIdx >= 0                     + 2 * inwc) +
                              (int)(weightIdx >= 0                     + 3 * inwc) +
-                             (int)(weightIdx >= 0                     + 4 * inwc) + 
+                             (int)(weightIdx >= 0                     + 4 * inwc) +
                              (int)(weightIdx >= biasWeightsOffset     + 1 * biwc) +
                              (int)(weightIdx >= biasWeightsOffset     + 2 * biwc) +
                              (int)(weightIdx >= biasWeightsOffset     + 3 * biwc) +
@@ -359,7 +359,7 @@ namespace {
             int weightTypeX = weightType & 0xC;
             int weightTypeY = weightType & 0x3;
 
-            // calculate indices, offsets and increments 
+            // calculate indices, offsets and increments
             const real_t *offOutputs;
             int           tgtBlockIdx;
             int           offOutputsInc;
@@ -369,7 +369,7 @@ namespace {
 
             switch (weightTypeX) {
             // input weight
-            case 0x0: 
+            case 0x0:
                 {{
                     // calculate indices
                     int inputWeightIdx = weightIdx;
@@ -380,7 +380,7 @@ namespace {
                     isBwStateWeight = (blockIdx >= effLayerSize);
                     if (isBwStateWeight)
                         blockIdx -= effLayerSize;
-                    
+
                     // set values for the loop below
                     tgtBlockIdx   = blockIdx;
                     offOutputs    = &plOutputs[plBlockIdx];
@@ -389,7 +389,7 @@ namespace {
                 break;
 
             // bias weight
-            case 0x4: 
+            case 0x4:
                 {{
                     // calculate indices
                     int biasWeightIdx = weightIdx - biasWeightsOffset;
@@ -408,7 +408,7 @@ namespace {
                 break;
 
             // internal weight
-            case 0x8: 
+            case 0x8:
                 {{
                     // calculate indices
                     int internalWeightIdx = weightIdx - internalWeightsOffset;
@@ -437,12 +437,12 @@ namespace {
                 break;
 
             // peephole weight
-            default: 
+            default:
                 {{
                     // calculate indices
                     int peepholeWeightIdx = weightIdx - peepholeWeightsOffset;
                     int blockIdx          = peepholeWeightIdx - (weightTypeY-1) * layerSize;
-                    
+
                     // check if we calculate backward state weights and adjust the block index
                     isBwStateWeight = (blockIdx >= effLayerSize);
                     if (isBwStateWeight)
@@ -450,7 +450,7 @@ namespace {
 
                     // select the appropriate cell states and adjust the block index
                     const real_t *cellStates = (isBwStateWeight ? bwCellStates : fwCellStates);
-                    
+
                     // set the timeshift
                     int timeShift;
                     if (weightTypeY == 0x3) {
@@ -487,7 +487,7 @@ namespace {
                 bwOgDeltas
             };
 
-            // calculate the weight update over all patterns            
+            // calculate the weight update over all patterns
             const real_t *offDeltas = &niagDeltasLut[weightTypeY + (isBwStateWeight ? 4 : 0)][tgtBlockIdx];
 
             if (skipFirstPattern) {
@@ -502,7 +502,7 @@ namespace {
             real_t wu = 0;
             for (int i = 0; i < numPatterns; ++i) {
                 wu += (offOutputs ? *offOutputs : bias) * *offDeltas;
-                    
+
                 offOutputs += offOutputsInc;
                 offDeltas  += effLayerSize;
             }
@@ -510,7 +510,7 @@ namespace {
             return wu;
         }
     };
-    
+
 } // anonymous namespace
 } // namespace internal
 
@@ -518,7 +518,7 @@ namespace {
 namespace layers {
 
     template <typename TDevice>
-    LstmLayer<TDevice>::LstmLayer(const helpers::JsonValue &layerChild, 
+    LstmLayer<TDevice>::LstmLayer(const helpers::JsonValue &layerChild,
                                   const helpers::JsonValue &weightsSection,
                                   Layer<TDevice> &precedingLayer,
                                   bool bidirectional)
@@ -737,7 +737,6 @@ namespace layers {
     void LstmLayer<TDevice>::loadSequences(const data_sets::DataSetFraction &fraction)
     {
         TrainableLayer<TDevice>::loadSequences(fraction);
-
         m_precLayerOutputsMatrix = helpers::Matrix<TDevice>(&this->precedingLayer().outputs(), this->precedingLayer().size(), this->curMaxSeqLength() * this->parallelSequences());
 
         // update the niag matrices
@@ -747,6 +746,8 @@ namespace layers {
 
             int rows = this->size() / (m_isBidirectional ? 2 : 1);
             int cols = this->curMaxSeqLength() * this->parallelSequences();
+            // printf("row, col : %d, %d  data->size() : %d  dataOffset : %d\n", rows, cols, data->size(), dataOffset);
+            // printf("row, col : %d, %d \n", rows, cols);
 
             fwbw->niActsMatrix = helpers::Matrix<TDevice>(&fwbw->niActs, rows, cols);
             fwbw->igActsMatrix = helpers::Matrix<TDevice>(&fwbw->igActs, rows, cols);

@@ -146,7 +146,7 @@ namespace layers {
 
         return correctClassifications;
     }
-    
+
     template <typename TDevice>
     const std::string& BinaryClassificationLayer<TDevice>::type() const
     {
@@ -181,6 +181,9 @@ namespace layers {
 
         return error;
     }
+
+    template <typename TDevice>
+    real_t BinaryClassificationLayer<TDevice>::calculateEntropy(){ return 0.0; }
 
     template <typename TDevice>
     void BinaryClassificationLayer<TDevice>::computeForwardPass()
