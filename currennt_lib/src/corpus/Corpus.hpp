@@ -32,6 +32,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <climits>
 #include <fstream>
 
 
@@ -75,17 +76,19 @@ namespace data_sets {
         int _getWordId(const std::string& word);
 
     private:
-        bool   m_fractionShuffling;
-        bool   m_sequenceShuffling;
-        bool   m_isClassificationData;
-        real_t m_noiseDeviation;
-        int    m_parallelSequences;
-        int    m_totalSequences;
-        int    m_totalTimesteps;
-        int    m_minSeqLength;
-        int    m_maxSeqLength;
-        int    m_inputPatternSize;
-        int    m_outputPatternSize;
+        bool             m_fractionShuffling;
+        bool             m_sequenceShuffling;
+        bool             m_isClassificationData;
+        real_t           m_noiseDeviation;
+        int              m_parallelSequences;
+        long long int    m_totalSequences;
+        long long int    m_totalTimesteps;
+        int              m_minSeqLength;
+        int              m_maxSeqLength;
+        int              m_inputPatternSize;
+        int              m_outputPatternSize;
+        int              m_appearing_threshold;
+        int              m_max_vocab_size;
 
         Cpu::real_vector m_outputMeans;
         Cpu::real_vector m_outputStdevs;
@@ -121,7 +124,8 @@ namespace data_sets {
             int truncSeqLength=0,
             bool fracShuf=false, bool seqShuf=false, real_t noiseDev=0,
             std::string cachePath = "",
-            std::unordered_map<std::string, int>* wordids=NULL, int constructDict = 0);
+            std::unordered_map<std::string, int>* wordids=NULL, int constructDict = 0,
+            int max_vocab_size = -1, int appearing_threshold = 5);
         /**
          * Destructor
          */

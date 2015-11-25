@@ -61,8 +61,12 @@ namespace optimizers {
         real_t m_curTrainingClassError;
         real_t m_curTestClassError;
         int    m_errorType;
+        int    m_layer_size;
+        int    m_numDevice;
 
         std::vector<real_vector> m_curWeightUpdates;
+        std::vector<Cpu::real_vector> m_allWeightUpdates;
+        std::vector<Cpu::real_vector> m_UpdateSums;
         std::vector<real_vector> m_bestWeights;
 
     private:
@@ -74,8 +78,13 @@ namespace optimizers {
         static void _exportWeights(const helpers::JsonDocument &jsonDoc, const char *arrayName, const std::vector<real_vector> &weights);
         static void _importWeights(const helpers::JsonDocument &jsonDoc, const char *arrayName, std::vector<real_vector> *weights);
         NeuralNetwork<TDevice>& _neuralNetwork();
-        const std::vector<real_vector>& _curWeightUpdates() const;
+        std::vector<real_vector>& _curWeightUpdates();
+        std::vector<Cpu::real_vector>& _UpdateSums();
+        std::vector<Cpu::real_vector>& _allWeightUpdates();
+        int _layersize();
+        int _numDevice();
         virtual void _updateWeights() =0;
+        virtual void _updateWeightsMultiGpu() =0;
 
     public:
         /**

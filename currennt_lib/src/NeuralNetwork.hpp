@@ -49,7 +49,7 @@ template <typename TDevice>
 class NeuralNetwork
 {
 private:
-    std::vector<boost::shared_ptr<layers::Layer<TDevice> > > m_layers;
+    std::vector< std::vector<boost::shared_ptr<layers::Layer<TDevice> > > > m_layers;
 
 public:
     /**
@@ -60,7 +60,7 @@ public:
      * @param maxSeqLength      The maximum length of a sequence
      */
     NeuralNetwork(const helpers::JsonDocument &jsonDoc, int parallelSequences, int maxSeqLength,
-                  int inputSizeOverride = -1, int outputSizeOverride = -1);
+                  int inputSizeOverride = -1, int outputSizeOverride = -1, int vocab_size = -1, int numberOfDevice = 1);
 
     /**
      * Destructs the neural network
@@ -72,36 +72,36 @@ public:
      *
      * @return The layers
      */
-    const std::vector<boost::shared_ptr<layers::Layer<TDevice> > >& layers() const;
+    const std::vector<boost::shared_ptr<layers::Layer<TDevice> > >& layers(const int device = 0) const;
 
     /**
      * Returns the input layer
      *
      * @return The input layer
      */
-    layers::InputLayer<TDevice>& inputLayer();
-    layers::intInputLayer<TDevice>& intinputLayer();
+    layers::InputLayer<TDevice>& inputLayer(const int device = 0);
+    layers::intInputLayer<TDevice>& intinputLayer(const int device = 0);
 
     /**
      * Returns the output layer
      *
      * @return The output layer
      */
-    layers::TrainableLayer<TDevice>& outputLayer();
+    layers::TrainableLayer<TDevice>& outputLayer(const int device = 0);
 
     /**
      * Returns the post output layer
      *
      * @return The post output layer
      */
-    layers::PostOutputLayer<TDevice>& postOutputLayer();
+    layers::PostOutputLayer<TDevice>& postOutputLayer(const int device = 0);
 
     /**
      * Loads sequences to the device
      *
      * @param fraction The data set fraction containing the sequences
      */
-    void loadSequences(const data_sets::DataSetFraction &fraction);
+    void loadSequences(const data_sets::DataSetFraction &fraction, const int device = 0);
 
     /**
      * Computes the forward pass
@@ -122,9 +122,9 @@ public:
      *
      * @return The computed error
      */
-    real_t calculateError() const;
+    real_t calculateError(const int device = 0) const;
     // entropy ver.
-    real_t calculateEntropy() const;
+    real_t calculateEntropy(const int device = 0) const;
 
 
     void setWordDict(std::unordered_map<std::string, int> *wdic);
@@ -151,7 +151,12 @@ public:
      *
      * @return Outputs of the processed fraction
      */
-    std::vector<std::vector<std::vector<real_t> > > getOutputs();
+    std::vector<std::vector<std::vector<real_t> > > getOutputs(const int device = 0);
+
+    /**
+     * Returns the number of using gpu device.
+     */
+    int getNumDevice();
 };
 
 

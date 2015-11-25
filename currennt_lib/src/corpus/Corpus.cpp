@@ -483,7 +483,7 @@ namespace data_sets {
         }
         Cpu::int_vector vec(loadlength);
         for ( int i = 1; i < loadlength; ++i ){
-            vec[i-1] = (ids.at(i));
+            vec[i-1] = ( (ids.at(i) > m_max_vocab_size )? m_wordids["<UNK>"] : ids.at(i) );
         }
         vec[loadlength-1] = (m_wordids["</s>"]);
         return vec;
@@ -518,6 +518,8 @@ namespace data_sets {
                       return l.second > r.second;
                   });
         for (std::pair<std::string, int> p : v){
+            if (p.second < m_appearing_threshold)
+                break;
             m_wordids[p.first] = m_nextid++;
         }
     }
@@ -539,7 +541,7 @@ namespace data_sets {
     }
 
     Corpus::Corpus(const std::vector<std::string> &txtfiles, int parSeq, real_t fraction, int truncSeqLength, bool fracShuf, bool seqShuf, real_t noiseDev,
-                   std::string cachePath, std::unordered_map<std::string, int>* wordids, int constructDict)
+                   std::string cachePath, std::unordered_map<std::string, int>* wordids, int constructDict, int max_vocab_size, int appearing_threshold)
         : m_fractionShuffling(fracShuf)
         , m_sequenceShuffling(seqShuf)
         , m_noiseDeviation   (noiseDev)
@@ -550,6 +552,8 @@ namespace data_sets {
         , m_curFirstSeqIdx   (-1)
         , m_nextid(0)
         , m_inputPatternSize (1)
+        , m_max_vocab_size( (max_vocab_size == -1)? INT_MAX : max_vocab_size )
+        , m_appearing_threshold(appearing_threshold)
     {
         int ret;
         int ncid;
@@ -664,7 +668,9 @@ namespace data_sets {
         } // txt file loop
 
         m_totalSequences = m_sequences.size();
-        m_outputPatternSize = m_wordids.size();
+        m_outputPatternSize = std::min(m_max_vocab_size, (int)m_wordids.size());
+        printf("outputPatternSize: %d(m_max_vocab_size %d, m_wordids.size %d)\n", m_outputPatternSize, m_max_vocab_size, m_wordids.size());
+        printf("max_vocab_size %d, m_wordids.size %d)\n", max_vocab_size, INT_MAX);
         // sort sequences by length
         if (Configuration::instance().trainingMode())
             std::sort(m_sequences.begin(), m_sequences.end(), internal::comp_seqs);

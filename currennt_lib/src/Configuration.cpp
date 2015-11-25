@@ -44,7 +44,7 @@ Configuration *Configuration::ms_instance = NULL;
 
 namespace internal {
 
-std::string serializeOptions(const po::variables_map &vm) 
+std::string serializeOptions(const po::variables_map &vm)
 {
     std::string s;
 
@@ -154,6 +154,9 @@ Configuration::Configuration(int argc, const char *argv[])
         ("momentum",            po::value(&m_momentum)         ->default_value((real_t)0.9,  "0.9"),   "sets the momentum for the steepest descent optimizer")
         ("weight_noise_sigma",  po::value(&m_weightNoiseSigma)  ->default_value((real_t)0), "sets the standard deviation of the weight noise added for the gradient calculation on every batch")
         ("save_network",        po::value(&m_trainedNetwork)   ->default_value("trained_network.jsn"), "sets the file name of the trained network that will be produced")
+        ("devices",        po::value(&m_devices)   ->default_value(1), "sets the number of devices")
+        ("max_lookup_size",        po::value(&m_max_lookup_size)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
+        ("max_vocab_size",        po::value(&m_max_vocab_size)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
         ;
 
     po::options_description autosaveOptions("Autosave options");
@@ -345,7 +348,7 @@ Configuration::Configuration(int argc, const char *argv[])
             std::cout << " after " << m_maxEpochs << " epochs or";
         std::cout << " if there is no new lowest validation error within " << m_maxEpochsNoBest << " epochs." << std::endl;
     }
-    
+
     if (m_autosave) {
         std::cout << "Autosave after EVERY EPOCH enabled." << std::endl;
     }
@@ -463,6 +466,21 @@ real_t Configuration::momentum() const
     return m_momentum;
 }
 
+int Configuration::devices() const
+{
+    return m_devices;
+}
+
+int Configuration::max_lookup_size() const
+{
+    return m_max_lookup_size;
+}
+
+int Configuration::max_vocab_size() const
+{
+    return m_max_vocab_size;
+}
+
 const std::string& Configuration::networkFile() const
 {
     return m_networkFile;
@@ -535,7 +553,7 @@ int Configuration::inputRightContext() const
 }
 
 int Configuration::outputTimeLag() const
-{   
+{
     return m_outputTimeLag;
 }
 

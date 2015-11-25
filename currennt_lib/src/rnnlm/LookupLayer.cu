@@ -92,6 +92,19 @@ namespace {
 namespace layers {
 
     template <typename TDevice>
+    void LookupLayer<TDevice>::_AddEmbedding(Cpu::real_vector &tmp, const int i, const int maximum_gpusize)
+    {
+        if ( i  > maximum_gpusize){
+            std::unique_ptr<helpers::Embedding<TDevice> > newemb(new helpers::Embedding<TDevice>(&tmp, std::string(typeid(Cpu).name()) ));
+            m_embeddings.push_back( std::move(newemb) );
+        }
+        else{
+            std::unique_ptr<helpers::Embedding<TDevice> > newemb(new helpers::Embedding<TDevice>(&tmp, std::string(typeid(TDevice).name()) ));
+            m_embeddings.push_back( std::move(newemb) );
+        }
+    }
+
+    template <typename TDevice>
     LookupLayer<TDevice>::LookupLayer(
         const helpers::JsonValue &layerChild,
         const helpers::JsonValue &weightsSection,
@@ -117,6 +130,8 @@ namespace layers {
             gen = new boost::mt19937;
             gen->seed(config.randomSeed());
         }
+
+        m_embeddings.reserve( m_wsize );
         boost::random::normal_distribution<real_t> dist(config.weightsDistributionNormalMean(), config.weightsDistributionNormalSigma());
 
         if (weightsSection.isValid() && weightsSection->HasMember(this->name().c_str())) {
@@ -131,7 +146,7 @@ namespace layers {
                 ++arraysize;
             }
             m_wsize = std::max(arraysize, m_wsize);
-            weights.resize( m_wsize * this->size());
+            weights.reserve(this->size());
 
             int c = 0;
             for (rapidjson::Value::ConstValueIterator eit = weightsChild.Begin(); eit != weightsChild.End(); ++eit){
@@ -145,19 +160,31 @@ namespace layers {
                 m_wdict[word] = id;
 
                 const rapidjson::Value &array = (*eit)["array"];
-                for (rapidjson::Value::ConstValueIterator it = array.Begin(); it != array.End(); ++it)
+                int arraysize = 0;
+                for (rapidjson::Value::ConstValueIterator it = array.Begin(); it != array.End(); ++it){
                     weights.push_back(static_cast<real_t>(it->GetDouble()));
+                    arraysize++;
+                }
+                if(weights.size() != this->size())
+                    throw std::runtime_error("the dimension of loaded embedding does not match this layer's embeddings-size.");
+                _AddEmbedding(weights, c, maximum_gpusize);
+                weights.clear();
+                ++c;
             }
-            c = (int)m_wdict.size();
             if (c < m_wsize){
-                for (size_t i = c * this->size(); i < weights.size(); ++i)
-                    weights[i] = dist(*gen);
+                while( c != m_wsize ){
+                    for (size_t i = 0; i < this->size(); ++i)
+                        weights.push_back( dist(*gen) );
+                    _AddEmbedding(weights, c, maximum_gpusize);
+                    weights.clear();
+                    ++c;
+                }
             }
         }
         // create random weights if no weights are given in the network file
         else {
 
-            weights.resize(m_wsize * this->size());
+            weights.resize(this->size());
 
             if (config.weightsDistributionType() == Configuration::DISTRIBUTION_UNIFORM) {
                 real_t range = config.weightsDistributionUniformMax() - config.weightsDistributionUniformMin();
@@ -166,24 +193,28 @@ namespace layers {
                     weights[i] = dist(*gen) + config.weightsDistributionUniformMin();
             }
             else {
-                for (size_t i = 0; i < weights.size(); ++i)
-                    weights[i] = dist(*gen);
+                for (int c = 0; c < m_wsize; ++c){
+                    for (size_t i = 0; i < this->size(); ++i)
+                        weights[i] = dist(*gen);
+                    _AddEmbedding(weights, c, maximum_gpusize);
+                }
+
             }
         }
         m_weightUpdates = real_vector(this->parallelSequences() * this->maxSeqLength() * this->size());
         // making embeddings
+        /*
         Cpu::real_vector tmp;
         tmp.resize(this->size());
         m_embeddings.reserve( m_wsize );
-        // printf("%d\n", );
-        int i = 0;
+        long int i = 0;
         while ( i * this->size() <  weights.size() ){
             thrust::copy(
                 weights.begin() + i * this->size(),
                 weights.begin() + (i+1) * this->size(),  //? need -1 ?
                 tmp.begin());
             // m_wdict should assign lower id to more frequent word
-            if ( i * this->size() > maximum_gpusize){
+            if ( i  > maximum_gpusize){
                 std::unique_ptr<helpers::Embedding<TDevice> > newemb(new helpers::Embedding<TDevice>(&tmp, std::string(typeid(Cpu).name()) ));
                 m_embeddings.push_back( std::move(newemb) );
             }
@@ -193,6 +224,8 @@ namespace layers {
             }
             ++i;
         }
+        */
+
         m_device_vectors.reserve( this->parallelSequences() * this->maxSeqLength() );
         for (int i = 0; i < this->parallelSequences() * this->maxSeqLength(); ++i){
             std::unique_ptr<real_vector> p_vec = std::unique_ptr<real_vector>(new real_vector(this->size()));
@@ -313,6 +346,10 @@ namespace layers {
             for (int w: layer->intoutputs()){
                 // need condition ?
                 real_vector* emb = this->embeddings(w, i);  // maybe &this->embeddings(w) returns cpu::real_vector while emb is gpu::real_vector
+                // printf("next start %d, allsize %d", i * this->size(), this->_outputs().size())
+                if(emb->size() != this->size())
+                    throw std::runtime_error("the dimension of loaded embedding does not match this layer's embeddings-size.");
+                assert(i * this->size() + emb->size() <= this->_outputs.size());
                 thrust::copy(emb->begin(), emb->end(), this->_outputs().begin() + i * this->size());
                 ++i;
             }

@@ -96,7 +96,7 @@ enum data_set_type
 // helper functions (implementation below)
 void readJsonFile(rapidjson::Document *doc, const std::string &filename);
 void loadDict(rapidjson::Document *doc, std::unordered_map<std::string, int> *p_dict);
-boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, std::unordered_map<std::string, int>* p_map=NULL, int constructDict = 0);
+boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, const int max_vocab, std::unordered_map<std::string, int>* p_map=NULL, int constructDict = 0);
 template <typename TDevice> void printLayers(const NeuralNetwork<TDevice> &nn);
 template <typename TDevice> void printOptimizer(const optimizers::lmOptimizer<TDevice> &optimizer);
 template <typename TDevice> void saveNetwork(const NeuralNetwork<TDevice> &nn, const std::string &filename);
@@ -111,6 +111,7 @@ template <typename TDevice>
 int trainerMain(const Configuration &config)
 {
     try {
+        printf("max_vocab_size: %d\n", config.max_vocab_size());
         // read the neural network description file
         std::string networkFile = config.continueFile().empty() ? config.networkFile() : config.continueFile();
         printf("Reading network from '%s'... ", networkFile.c_str());
@@ -131,23 +132,23 @@ int trainerMain(const Configuration &config)
         if (config.trainingMode()) {
             // not efficient
             if (_wordDict.empty()){
-                trainingSet = loadDataSet(DATA_SET_TRAINING);
+                trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size());
                 _wordDict = *(trainingSet->dict()); // copy from trainingSet
             }
             else{
-                trainingSet = loadDataSet(DATA_SET_TRAINING, &_wordDict, 1);
+                trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, 1);
                 _wordDict = *(trainingSet->dict());
             }
 
             // use same wordDict as used in trainingSet
             if (!config.validationFiles().empty())
-                validationSet = loadDataSet(DATA_SET_VALIDATION, &_wordDict);
+                validationSet = loadDataSet(DATA_SET_VALIDATION, config.max_vocab_size(), &_wordDict);
 
             if (!config.testFiles().empty())
-                testSet = loadDataSet(DATA_SET_TEST, &_wordDict);
+                testSet = loadDataSet(DATA_SET_TEST, config.max_vocab_size(), &_wordDict);
         }
         else {
-            feedForwardSet = loadDataSet(DATA_SET_FEEDFORWARD);
+            feedForwardSet = loadDataSet(DATA_SET_FEEDFORWARD, config.max_vocab_size());
         }
 
         // calculate the maximum sequence length
@@ -166,11 +167,18 @@ int trainerMain(const Configuration &config)
         // create the neural network
         printf("Creating the neural network... ");
         fflush(stdout);
+        if (config.max_lookup_size() != -1)
+            netDoc.AddMember("max_lookup_size", config.max_lookup_size(), netDoc.GetAllocator());
+
         int inputSize = -1;
         int outputSize = -1;
         inputSize = trainingSet->inputPatternSize();
         outputSize = trainingSet->outputPatternSize();
-        NeuralNetwork<TDevice> neuralNetwork(netDoc, parallelSequences, maxSeqLength, inputSize, outputSize);
+        int vocab_size = (int)_wordDict.size();
+        // if (config.max_vocab_size() != -1 && config.max_vocab_size() < outputSize)
+        //     outputSize = config.max_vocab_size();
+
+        NeuralNetwork<TDevice> neuralNetwork(netDoc, parallelSequences, maxSeqLength, inputSize, outputSize, vocab_size, config.devices());
         neuralNetwork.setWordDict(&_wordDict);
 
         if (!trainingSet->empty() && trainingSet->outputPatternSize() != neuralNetwork.postOutputLayer().size())
@@ -219,8 +227,8 @@ int trainerMain(const Configuration &config)
             printOptimizer(config, *optimizer);
 
             std::string infoRows;
-
             // continue from autosave?
+
             if (!config.continueFile().empty()) {
                 printf("Restoring state from '%s'... ", config.continueFile().c_str());
                 fflush(stdout);
@@ -614,7 +622,7 @@ void loadDict(rapidjson::Document *doc, std::unordered_map<std::string, int> *p_
 
 }
 
-boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, std::unordered_map<std::string, int>* p_map, int constructDict)
+boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, const int max_vocab, std::unordered_map<std::string, int>* p_map, int constructDict)
 {
     std::string type;
     std::vector<std::string> filenames;
@@ -668,18 +676,18 @@ boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, std::unor
     }
     printf("...");
     fflush(stdout);
-
+    printf("maxvocab: %d\n", max_vocab);
     //std::cout << "truncating to " << truncSeqLength << std::endl;
     boost::shared_ptr<data_sets::Corpus> ds = boost::make_shared<data_sets::Corpus>(
         filenames,
         Configuration::instance().parallelSequences(), fraction, truncSeqLength,
-        fracShuf, seqShuf, noiseDev, cachePath, p_map, constructDict);
+        fracShuf, seqShuf, noiseDev, cachePath, p_map, constructDict, max_vocab);
 
     printf("done.\n");
     printf("Loaded fraction:  %d%%\n",   (int)(fraction*100));
-    printf("Sequences:        %d\n",     ds->totalSequences());
+    printf("Sequences:        %lld\n",     ds->totalSequences());
     printf("Sequence lengths: %d..%d\n", ds->minSeqLength(), ds->maxSeqLength());
-    printf("Total timesteps:  %d\n",     ds->totalTimesteps());
+    printf("Total timesteps:  %lld\n",     ds->totalTimesteps());
     printf("\n");
 
     return ds;

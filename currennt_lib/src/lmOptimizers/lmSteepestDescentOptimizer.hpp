@@ -26,6 +26,7 @@
 #include "lmOptimizer.hpp"
 
 #include <vector>
+#include <map>
 
 
 namespace optimizers {
@@ -49,6 +50,8 @@ namespace optimizers {
 
     protected:
         virtual void _updateWeights();
+        virtual void _updateWeightsMultiGpu();
+        void _SumUpdates(std::map<int, int> &emb_posi);
 
     public:
         /**

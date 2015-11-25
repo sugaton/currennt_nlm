@@ -34,6 +34,26 @@
 
 #include <thrust/transform.h>
 
+namespace internal{
+
+    // return status, 0: successed 1:partially failed　2: completely failed
+    int getMultiFraction(data_sets::Corpus &ds, int size, std::vector<boost::shared_ptr<data_sets::CorpusFraction>>* vec)
+    {
+        int ret = 0;
+        boost::shared_ptr<data_sets::CorpusFraction> frac;
+        for (int i = 0; i < size; ++i){
+            if ((frac = ds.getNextFraction()))
+              vec->at(i) = frac;
+            else if (i == 0) return 2;
+            else{
+              vec->at(i) = vec->at(0);
+              ret = 1;
+            }
+        }
+        return ret;
+    }
+
+}
 
 namespace optimizers {
 
@@ -44,21 +64,29 @@ namespace optimizers {
         real_t error = 0;
         *classError = (real_t) ds.totalTimesteps();
 
-        boost::shared_ptr<data_sets::CorpusFraction> frac;
+        std::vector< boost::shared_ptr<data_sets::CorpusFraction> > fracs;
+        fracs.resize(m_numDevice);
         bool firstFraction = true;
-        while ((frac = ds.getNextFraction())) {
+        while (true) {
+            int status = internal::getMultiFraction(ds, m_numDevice, &fracs);
+            if (status == 2) break;
             // compute forward pass and calculate the error
-            m_neuralNetwork.loadSequences(*frac);
+            for (int i = 0; i < m_numDevice; ++i)
+                m_neuralNetwork.loadSequences(*(fracs[i]), i);
             m_neuralNetwork.computeForwardPass();
             if (!m_errorType) // log_prob
-                error += m_neuralNetwork.calculateError();
+                for (int device = 0; device < m_numDevice; ++device)
+                    error += m_neuralNetwork.calculateError(device);
             else  // entropy
-                error += m_neuralNetwork.calculateError();
+                for (int device = 0; device < m_numDevice; ++device)
+                    error += m_neuralNetwork.calculateError(device);
 
             if (dynamic_cast<layers::BinaryClassificationLayer<TDevice>*>(&m_neuralNetwork.postOutputLayer()))
-                *classError -= (real_t)static_cast<layers::BinaryClassificationLayer<TDevice>&>(m_neuralNetwork.postOutputLayer()).countCorrectClassifications();
+                for (int device = 0; device < m_numDevice; ++device)
+                    *classError -= (real_t)static_cast<layers::BinaryClassificationLayer<TDevice>&>(m_neuralNetwork.postOutputLayer(device)).countCorrectClassifications();
             if (dynamic_cast<layers::MulticlassClassificationLayer<TDevice>*>(&m_neuralNetwork.postOutputLayer()))
-                *classError -= (real_t)static_cast<layers::MulticlassClassificationLayer<TDevice>&>(m_neuralNetwork.postOutputLayer()).countCorrectClassifications();
+                for (int device = 0; device < m_numDevice; ++device)
+                    *classError -= (real_t)static_cast<layers::MulticlassClassificationLayer<TDevice>&>(m_neuralNetwork.postOutputLayer(device)).countCorrectClassifications();
 
             if (calcWeightUpdates) {
                 // weight noise:
@@ -75,41 +103,47 @@ namespace optimizers {
                 // compute the backward pass and accumulate the weight updates
                 m_neuralNetwork.computeBackwardPass();
 
-                // case lookup-layer (i = 1)
-                {
-                    layers::LookupLayer<TDevice> *layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers()[1].get());
-                    if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
-                        thrust::transform(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[1].begin(), m_curWeightUpdates[1].begin(), thrust::plus<real_t>());
-                    else
-                    	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[1].begin());
+                for (int device = 0; device < m_numDevice; ++device){
+                    // case lookup-layer (i = 1)
+                    int N = device * m_layer_size;
+                    {
+                        layers::LookupLayer<TDevice> *layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers(device)[1].get());
+                        if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
+                            thrust::transform(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin(), m_curWeightUpdates[N + 1].begin(), thrust::plus<real_t>());
+                        else
+                        	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin());
+                    }
+
+                    for (size_t i = 2; i < m_neuralNetwork.layers().size()-1; ++i) {
+                        layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
+                        if (!layer)
+                            continue;
+
+                        if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
+                            thrust::transform(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + i].begin(), m_curWeightUpdates[N + i].begin(), thrust::plus<real_t>());
+                        else
+                        	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + i].begin());
+
+                        // restore old weights before update in case of weight noise
+                        if (Configuration::instance().weightNoiseSigma() > 0.0)
+                            thrust::copy(origWeights[i].begin(), origWeights[i].end(), layer->weights().begin());
+                    }
                 }
-
-                for (size_t i = 2; i < m_neuralNetwork.layers().size()-1; ++i) {
-                    layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers()[i].get());
-                    if (!layer)
-                        continue;
-
-                    if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
-                        thrust::transform(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[i].begin(), m_curWeightUpdates[i].begin(), thrust::plus<real_t>());
-                    else
-                    	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[i].begin());
-
-                    // restore old weights before update in case of weight noise
-                    if (Configuration::instance().weightNoiseSigma() > 0.0)
-                        thrust::copy(origWeights[i].begin(), origWeights[i].end(), layer->weights().begin());
-                }
-
                 // update weights for hybrid online/batch learning
-                if (Configuration::instance().hybridOnlineBatch())
-                    _updateWeights();
+                if (Configuration::instance().hybridOnlineBatch()){
+                    if (m_numDevice == 1) _updateWeights();
+                    else                  _updateWeightsMultiGpu();
+                }
             }
-
             firstFraction = false;
+            if (status == 1) break;
         }
 
         // update weights for batch learning
-        if (calcWeightUpdates && !Configuration::instance().hybridOnlineBatch())
-            _updateWeights();
+        if (calcWeightUpdates && !Configuration::instance().hybridOnlineBatch()){
+            if (m_numDevice == 1) _updateWeights();
+            else                  _updateWeightsMultiGpu();
+        }
 
         // normalize the errors
         if (!m_errorType)
@@ -193,17 +227,42 @@ namespace optimizers {
     }
 
     template <typename TDevice>
-    const std::vector<typename lmOptimizer<TDevice>::real_vector>& lmOptimizer<TDevice>::_curWeightUpdates() const
+    std::vector<typename lmOptimizer<TDevice>::real_vector>& lmOptimizer<TDevice>::_curWeightUpdates()
     {
         return m_curWeightUpdates;
     }
 
 
     template <typename TDevice>
+    std::vector<Cpu::real_vector>& lmOptimizer<TDevice>::_UpdateSums()
+    {
+        return m_UpdateSums;
+    }
+
+    template <typename TDevice>
+    std::vector<Cpu::real_vector>& lmOptimizer<TDevice>::_allWeightUpdates()
+    {
+        return m_UpdateSums;
+    }
+
+    template <typename TDevice>
+    int lmOptimizer<TDevice>::_layersize()
+    {
+        return m_layer_size;
+    }
+
+    template <typename TDevice>
+    int lmOptimizer<TDevice>::_numDevice()
+    {
+        return m_numDevice;
+    }
+
+    template <typename TDevice>
     void lmOptimizer<TDevice>::use_entropyError()
     {
         m_errorType = 0;
     }
+
     template <typename TDevice>
     lmOptimizer<TDevice>::lmOptimizer(NeuralNetwork<TDevice> &neuralNetwork, data_sets::Corpus &trainingSet,
                                    data_sets::Corpus &validationSet, data_sets::Corpus &testSet,
@@ -229,27 +288,57 @@ namespace optimizers {
         , m_errorType                 (0)
     {
         // initialize the best weights vectors
+        m_numDevice = m_neuralNetwork.getNumDevice();
         m_bestWeights.resize(m_neuralNetwork.layers().size());
-        for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
-        	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers()[i].get());
-            if (layer)
-                m_bestWeights[i] = layer->weights();
-            else{
-                if (i == 1){
-                  	layers::LookupLayer<TDevice> *_layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers()[i].get());
-                    if (_layer)
-                        m_bestWeights[i] = _layer->weightUpdates();
+        m_allWeightUpdates.resize(m_neuralNetwork.layers().size());
+        m_UpdateSums.resize(m_neuralNetwork.layers().size());
+        m_curWeightUpdates.resize(m_neuralNetwork.layers().size() * m_numDevice);
+        m_layer_size = m_neuralNetwork.layers().size();
+        for ( int device = 0; device < m_numDevice; ++device){
+            cudaSetDevice(device);
+            for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
+            	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
+                if (layer){
+                    if (device == 0){
+                        m_bestWeights[i] = layer->weights();
+                        m_allWeightUpdates[i] = Cpu::real_vector(layer->weights().size());
+                        m_UpdateSums[i] = Cpu::real_vector(layer->weights().size());
+                    }
+                    m_curWeightUpdates[device * m_layer_size + i] = layer->weights();
+                }
+                else{
+                    if (i != 1) continue;
+                  	layers::LookupLayer<TDevice> *_layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
+                    if (_layer){
+                        if (device == 0){
+                            m_bestWeights[i] = _layer->weightUpdates();
+                            m_allWeightUpdates[i] = Cpu::real_vector(_layer->weightUpdates().size());
+                            // allocate for embeddings of appeared word
+                            m_UpdateSums[i] = Cpu::real_vector(_layer->weightUpdates().size() * m_numDevice);
+                        }
+                        m_curWeightUpdates[device * m_layer_size + i] = _layer->weightUpdates();
+                    }
                 }
             }
         }
+        // m_UpdateSums = m_allWeightUpdates;
+
 
         // initialize the current weight updates vectors
-        m_curWeightUpdates = m_bestWeights;
+        // m_curWeightUpdates = m_bestWeights;
     }
 
     template <typename TDevice>
     lmOptimizer<TDevice>::~lmOptimizer()
     {
+        for ( int device = 0; device < m_numDevice; ++device){
+            cudaSetDevice(device);
+            for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
+                m_curWeightUpdates[device * m_layer_size + i].clear();
+                m_curWeightUpdates[device * m_layer_size + i].shrink_to_fit();
+            }
+        }
+        m_curWeightUpdates.clear();
     }
 
     template <typename TDevice>

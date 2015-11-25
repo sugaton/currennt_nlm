@@ -95,6 +95,9 @@ private:
     int m_inputLeftContext;
     int m_inputRightContext;
     int m_outputTimeLag;
+    int m_devices;
+    int m_max_lookup_size;
+    int m_max_vocab_size;
 
     std::string m_networkFile;
     std::string m_trainedNetwork;
@@ -131,7 +134,7 @@ public:
 
     /**
      * Returns a string that contains all options
-     * 
+     *
      * @return A string that contains all options
      */
     const std::string& serializedOptions() const;
@@ -171,7 +174,7 @@ public:
     /**
      * Returns true if shuffling of sequences within and across fractions is enabled
      *
-     * If this option is enabled, the sequences are shuffled before each training epoch, 
+     * If this option is enabled, the sequences are shuffled before each training epoch,
      * resulting in a completely randomized distribution of sequences across the fractions.
      *
      * @return True if shuffling of sequences is enabled
@@ -193,7 +196,7 @@ public:
      * @return True if autosave is enabled
      */
     bool autosave() const;
-    
+
     /**
       * Returns true if autosave at best validation error is enabled
       *
@@ -258,6 +261,19 @@ public:
     real_t momentum() const;
 
     /**
+     * Returns the number of gpu-devices
+     *
+     * @return the number of gpu-devices
+     */
+    int devices() const;
+
+    // returns the maximum number of words that can be stored in LookupLayer
+    int max_lookup_size() const;
+
+    // returns the maximum number of words that can be calculated its probability.
+    int max_vocab_size() const;
+
+    /**
      * Returns the path to the NN layout and weights file
      *
      * @return The path to the NN layout and weights file
@@ -301,7 +317,7 @@ public:
 
     /**
      * Returns the sequence length to which the training set is truncated
-     * 
+     *
      * @return sequence truncation length
      */
     unsigned truncateSeqLength() const;

@@ -33,6 +33,8 @@ namespace layers {
         // real_vector m_outputErrors;
         // real_vector m_weights;
         real_vector m_weightUpdates;
+
+        void _AddEmbedding(Cpu::real_vector &tmp, const int i, const int maximum_gpusize);
     public:
         /**
          * Constructs the Layer

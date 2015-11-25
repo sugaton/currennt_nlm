@@ -40,6 +40,8 @@ namespace layers {
 
     private:
         int_vector m_patTargetClasses;
+        Cpu::int_vector m_targetClasses_cpu;
+        int m_docRangeBegin;
 
     public:
         /**
