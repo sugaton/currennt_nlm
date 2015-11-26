@@ -53,6 +53,11 @@ namespace internal{
         return ret;
     }
 
+    void showProgress(int curEpoch, real_t error, real_t progress){
+        printf("\r %5d | on training:\t %8.1f  progress: %f%%", curEpoch, (float)error, (float)progress * 100);
+        fflush(stdout);
+    }
+    void refreshLine(int curEpoch){ printf("\r %5d | ", curEpoch); }
 }
 
 namespace optimizers {
@@ -64,15 +69,20 @@ namespace optimizers {
         real_t error = 0;
         *classError = (real_t) ds.totalTimesteps();
 
+        int consume_sequences = 0;
+
         std::vector< boost::shared_ptr<data_sets::CorpusFraction> > fracs;
         fracs.resize(m_numDevice);
         bool firstFraction = true;
+
+        int loop_count = 0;
         while (true) {
             int status = internal::getMultiFraction(ds, m_numDevice, &fracs);
             if (status == 2) break;
             // compute forward pass and calculate the error
             for (int i = 0; i < m_numDevice; ++i)
                 m_neuralNetwork.loadSequences(*(fracs[i]), i);
+            consume_sequences += m_numDevice;
             m_neuralNetwork.computeForwardPass();
             if (!m_errorType) // log_prob
                 for (int device = 0; device < m_numDevice; ++device)
@@ -82,11 +92,13 @@ namespace optimizers {
                     error += m_neuralNetwork.calculateError(device);
 
             if (dynamic_cast<layers::BinaryClassificationLayer<TDevice>*>(&m_neuralNetwork.postOutputLayer()))
-                for (int device = 0; device < m_numDevice; ++device)
+                for (int device = 0; device < m_numDevice; ++device){
                     *classError -= (real_t)static_cast<layers::BinaryClassificationLayer<TDevice>&>(m_neuralNetwork.postOutputLayer(device)).countCorrectClassifications();
+                }
             if (dynamic_cast<layers::MulticlassClassificationLayer<TDevice>*>(&m_neuralNetwork.postOutputLayer()))
-                for (int device = 0; device < m_numDevice; ++device)
+                for (int device = 0; device < m_numDevice; ++device){
                     *classError -= (real_t)static_cast<layers::MulticlassClassificationLayer<TDevice>&>(m_neuralNetwork.postOutputLayer(device)).countCorrectClassifications();
+                }
 
             if (calcWeightUpdates) {
                 // weight noise:
@@ -137,6 +149,9 @@ namespace optimizers {
             }
             firstFraction = false;
             if (status == 1) break;
+            ++loop_count;
+            if(m_tmp_show > 0 && loop_count % m_tmp_show ==0)
+                internal::showProgress(m_curEpoch, error / consume_sequences, (float)consume_sequences / (float)ds.totalSequences());
         }
 
         // update weights for batch learning
@@ -151,7 +166,8 @@ namespace optimizers {
         else  // perplexity
             error = exp(error / ds.totalTimesteps());
         *classError /= (real_t)ds.totalTimesteps();
-
+        if (m_tmp_show > 0)
+            internal::refreshLine(m_curEpoch);
         return error;
     }
 
@@ -266,7 +282,7 @@ namespace optimizers {
     template <typename TDevice>
     lmOptimizer<TDevice>::lmOptimizer(NeuralNetwork<TDevice> &neuralNetwork, data_sets::Corpus &trainingSet,
                                    data_sets::Corpus &validationSet, data_sets::Corpus &testSet,
-                                   int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery)
+                                   int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery, int temp_show)
         : m_neuralNetwork             (neuralNetwork)
         , m_trainingSet               (trainingSet)
         , m_validationSet             (validationSet)
@@ -286,6 +302,7 @@ namespace optimizers {
         , m_curTrainingClassError     (0)
         , m_curTestClassError         (0)
         , m_errorType                 (0)
+        , m_tmp_show                  (temp_show)
     {
         // initialize the best weights vectors
         m_numDevice = m_neuralNetwork.getNumDevice();

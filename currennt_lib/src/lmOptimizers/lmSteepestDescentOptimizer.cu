@@ -237,8 +237,8 @@ namespace optimizers {
     lmSteepestDescentOptimizer<TDevice>::lmSteepestDescentOptimizer(
         NeuralNetwork<TDevice> &neuralNetwork, data_sets::Corpus &trainingSet, data_sets::Corpus &validationSet,
         data_sets::Corpus &testSet, int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery,
-        real_t learningRate, real_t momentum)
-        : lmOptimizer<TDevice>(neuralNetwork, trainingSet, validationSet, testSet, maxEpochs, maxEpochsNoBest, validateEvery, testEvery)
+        real_t learningRate, real_t momentum, int tmp_show)
+        : lmOptimizer<TDevice>(neuralNetwork, trainingSet, validationSet, testSet, maxEpochs, maxEpochsNoBest, validateEvery, testEvery, tmp_show)
         , m_learningRate    (learningRate)
         , m_learningRateFirst(learningRate)
         , m_momentum        (momentum)

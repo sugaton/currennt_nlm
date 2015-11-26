@@ -98,6 +98,7 @@ private:
     int m_devices;
     int m_max_lookup_size;
     int m_max_vocab_size;
+    int m_temp_show;
 
     std::string m_networkFile;
     std::string m_trainedNetwork;
@@ -272,6 +273,8 @@ public:
 
     // returns the maximum number of words that can be calculated its probability.
     int max_vocab_size() const;
+
+    int temp_show() const;
 
     /**
      * Returns the path to the NN layout and weights file

@@ -157,6 +157,7 @@ Configuration::Configuration(int argc, const char *argv[])
         ("devices",        po::value(&m_devices)   ->default_value(1), "sets the number of devices")
         ("max_lookup_size",        po::value(&m_max_lookup_size)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
         ("max_vocab_size",        po::value(&m_max_vocab_size)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
+        ("temporal_show",        po::value(&m_temp_show)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
         ;
 
     po::options_description autosaveOptions("Autosave options");
@@ -479,6 +480,11 @@ int Configuration::max_lookup_size() const
 int Configuration::max_vocab_size() const
 {
     return m_max_vocab_size;
+}
+
+int Configuration::temp_show() const
+{
+    return m_temp_show;
 }
 
 const std::string& Configuration::networkFile() const

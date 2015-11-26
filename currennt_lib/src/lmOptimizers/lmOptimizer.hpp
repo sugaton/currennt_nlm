@@ -63,6 +63,7 @@ namespace optimizers {
         int    m_errorType;
         int    m_layer_size;
         int    m_numDevice;
+        int    m_tmp_show;
 
         std::vector<real_vector> m_curWeightUpdates;
         std::vector<Cpu::real_vector> m_allWeightUpdates;
@@ -108,7 +109,8 @@ namespace optimizers {
             int maxEpochs,
             int maxEpochsNoBest,
             int validateEvery,
-            int testEvery
+            int testEvery,
+            int temp_show = -1
             );
 
         /**

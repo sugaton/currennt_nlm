@@ -52,7 +52,7 @@ namespace layers {
          * @param precedingLayer The layer preceding this one
          */
         SoftmaxLayer(
-            const helpers::JsonValue &layerChild, 
+            const helpers::JsonValue &layerChild,
             const helpers::JsonValue &weightsSection,
             Layer<TDevice>           &precedingLayer
             );

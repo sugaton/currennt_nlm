@@ -36,6 +36,7 @@
 #include <thrust/iterator/constant_iterator.h>
 #include <thrust/iterator/counting_iterator.h>
 
+#include <typeinfo>
 #define SKIP_MARKER helpers::NumericLimits<real_t>::max()
 
 
@@ -53,7 +54,7 @@ namespace {
         __host__ __device__ real_t operator() (const int &patIdx) const
         {
             // check if the pattern belongs to a sequence;
-            // if not we return a certain number to avoid 
+            // if not we return a certain number to avoid
             // looking up patTypes for future calculations
             if (patTypes[patIdx] == PATTYPE_NONE)
                 return SKIP_MARKER;
@@ -132,6 +133,75 @@ namespace {
         }
     };
 
+    struct residue_eq
+    {
+        int size;
+        residue_eq(const int &_size) : size(_size){};
+        __host__ __device__ bool operator() (const int &i, const int &j) const {
+            return (i / size == j / size);
+        }
+    };
+
+
+    struct SumUpOutputsAtomicFn
+    {
+        int layerSize;
+
+        const real_t *outputs;
+        real_t *patTmp;
+
+        __host__ __device__ void operator() (const int &id) const
+        {
+            // unpack the tuple
+            int patIdx  = id / layerSize;
+            int localid = id % layerSize;
+
+            // check if the pattern belongs to a sequence
+            if (patTmp[patIdx] == SKIP_MARKER)
+                return;
+
+            // sum up the outputs
+            // const real_t *offOutputs = &outputs[patIdx * layerSize];
+
+            // for (int i = 0; i < layerSize; ++i)
+            //     sum += offOutputs[i];
+            #if defined(__CUDA_ARCH__)
+                atomicAdd(patTmp + patIdx, outputs[id]);
+            #else
+                patTmp[patIdx] += outputs[id];
+            #endif
+            // store the result
+            // t.get<0>() = sum;
+        }
+    };
+    struct SumUpOutputsAtomicHFn{
+        // /*
+        int layerSize;
+
+        const real_t *outputs;
+        real_t *patTmp;
+
+        __host__ void operator() (const int &id) const
+        {
+            // unpack the tuple
+            int patIdx  = id / layerSize;
+            int localid = id % layerSize;
+
+            // check if the pattern belongs to a sequence
+            if (patTmp[patIdx] == SKIP_MARKER)
+                return;
+
+            // sum up the outputs
+            // const real_t *offOutputs = &outputs[patIdx * layerSize];
+
+            // for (int i = 0; i < layerSize; ++i)
+            //     sum += offOutputs[i];
+            patTmp[patIdx] += outputs[id];
+            // store the result
+            // t.get<0>() = sum;
+        }
+    };
+
     struct NormalizeOutputsFn
     {
         int layerSize;
@@ -171,7 +241,7 @@ namespace {
         __host__ __device__ real_t operator() (const int &patIdx) const
         {
             // check if the pattern belongs to a sequence;
-            // if not we return a certain number to avoid 
+            // if not we return a certain number to avoid
             // looking up patTypes for future calculations
             if (patTypes[patIdx] == PATTYPE_NONE)
                 return SKIP_MARKER;
@@ -226,7 +296,7 @@ namespace layers {
 
     template <typename TDevice, typename TFfActFn>
     SoftmaxLayer<TDevice, TFfActFn>::SoftmaxLayer(
-        const helpers::JsonValue &layerChild, 
+        const helpers::JsonValue &layerChild,
         const helpers::JsonValue &weightsSection,
         Layer<TDevice> &precedingLayer)
         : FeedForwardLayer<TDevice, TFfActFn>(layerChild, weightsSection, precedingLayer)
@@ -282,7 +352,7 @@ namespace layers {
                 fn
                 );
         }}
-
+        #ifndef NEWSOFTMAX
         // sum up all outputs for each pattern
         {{
             internal::SumUpOutputsFn fn;
@@ -297,7 +367,19 @@ namespace layers {
                 fn
                 );
         }}
+        #else
+        {{
+            int n = this->size() * this->curMaxSeqLength() * this->parallelSequences();
+            thrust::reduce_by_key(
+                thrust::counting_iterator<int>(0),
+                thrust::counting_iterator<int>(0) + n,
+                this->_outputs().begin(),
+                thrust::make_discard_iterator(),
+                m_patTmp.begin(),
+                internal::residue_eq(this->size()) );
 
+        }}
+        #endif
         // normalize the outputs
         {{
             internal::NormalizeOutputsFn fn;
@@ -312,8 +394,9 @@ namespace layers {
                 fn
                 );
         }}
-    }
 
+        m_patTmp.resize(this->patTypes().size());
+    }
     template <typename TDevice, typename TFfActFn>
     void SoftmaxLayer<TDevice, TFfActFn>::computeBackwardPass()
     {
@@ -354,7 +437,9 @@ namespace layers {
 
 
     // explicit template instantiations
+    // #ifndef NEWSOFTMAX
     template class SoftmaxLayer<Cpu, activation_functions::Identity>;
+    // #endif
     template class SoftmaxLayer<Gpu, activation_functions::Identity>;
 
 } // namespace layers
