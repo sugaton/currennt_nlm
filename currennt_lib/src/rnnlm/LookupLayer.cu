@@ -382,7 +382,7 @@ namespace layers {
             rapidjson::Value embeddingsSection(rapidjson::kObjectType);
             std::string word = it->first;
             int w = it->second;
-            real_vector* vec = this->get_emb(w)->get_data();
+            real_vector* vec = this->embeddings(w, 0);
             // create and fill the weight arrays
             rapidjson::Value embeddingWeightsArray(rapidjson::kArrayType);
             int emb_size = this->size();

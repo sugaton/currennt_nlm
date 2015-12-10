@@ -152,6 +152,14 @@ namespace optimizers {
             ++loop_count;
             if(m_tmp_show > 0 && loop_count % m_tmp_show ==0)
                 internal::showProgress(m_curEpoch, error / consume_sequences, (float)consume_sequences / (float)ds.totalSequences());
+	    time_point now =  std::chrono::system_clock::now();
+	    auto spend_time = now - m_start_time;
+	    auto hour = std::chrono::duration_cast<std::chrono::minutes>(spend_time).count();
+	    if(hour >= 10){
+		if(m_tmp_show > 0)
+		    printf("\n");
+		break;
+	    }
         }
 
         // update weights for batch learning
@@ -305,6 +313,7 @@ namespace optimizers {
         , m_tmp_show                  (temp_show)
     {
         // initialize the best weights vectors
+	m_start_time = std::chrono::system_clock::now();
         m_numDevice = m_neuralNetwork.getNumDevice();
         m_bestWeights.resize(m_neuralNetwork.layers().size());
         m_allWeightUpdates.resize(m_neuralNetwork.layers().size());
@@ -427,6 +436,9 @@ namespace optimizers {
             // train one epoch and update the weights
             m_curTrainingError = _processDataSet(m_trainingSet, true, &m_curTrainingClassError);
 
+	    m_start_time = std::chrono::system_clock::now();
+
+printf("line %d\n", __LINE__);
             // calculate the validation error and store the weights if we a new lowest error
             if (!m_validationSet.empty() && m_curEpoch % m_validateEvery == 0) {
                 m_curValidationError = _processDataSet(m_validationSet, false, &m_curValidationClassError);
@@ -442,9 +454,11 @@ namespace optimizers {
                 }
             }
             else if (m_validationSet.empty()) {
+printf("line %d\n", __LINE__);
                 m_epochsSinceLowestError = 0;
                 _storeWeights();
             }
+printf("line %d\n", __LINE__);
 
             // calculate the test error
             if (!m_testSet.empty() && m_curEpoch % m_testEvery == 0)
@@ -452,8 +466,10 @@ namespace optimizers {
 
             // check if we did not get a new lowest error for some training epochs
             // or if we reached the maximum number of training epochs
+printf("line %d\n", __LINE__);
             if (m_epochsSinceLowestError >= m_maxEpochsNoBest || (m_maxEpochs >= 0 && m_curEpoch >= m_maxEpochs)) {
                 _restoreWeights();
+printf("line %d\n", __LINE__);
                 m_finished = true;
             }
         }

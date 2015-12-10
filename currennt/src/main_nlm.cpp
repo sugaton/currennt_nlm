@@ -136,7 +136,10 @@ int trainerMain(const Configuration &config)
                 _wordDict = *(trainingSet->dict()); // copy from trainingSet
             }
             else{
-                trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, 1);
+                // TODO add option fixed_dict();
+                //    int iffix = config.fixed_dict()
+                //    trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, iffix);
+                trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, 0);
                 _wordDict = *(trainingSet->dict());
             }
 
@@ -208,13 +211,12 @@ int trainerMain(const Configuration &config)
             fflush(stdout);
             boost::scoped_ptr<optimizers::lmOptimizer<TDevice> > optimizer;
             optimizers::lmSteepestDescentOptimizer<TDevice> *sdo;
-
             switch (config.optimizer()) {
             case Configuration::OPTIMIZER_STEEPESTDESCENT:
                 sdo = new optimizers::lmSteepestDescentOptimizer<TDevice>(
                     neuralNetwork, *trainingSet, *validationSet, *testSet,
                     config.maxEpochs(), config.maxEpochsNoBest(), config.validateEvery(), config.testEvery(),
-                    config.learningRate(), config.momentum()
+                    config.learningRate(), config.momentum(), config.temp_show()
                     );
                 optimizer.reset(sdo);
                 break;

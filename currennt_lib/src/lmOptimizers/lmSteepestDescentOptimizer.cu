@@ -170,13 +170,13 @@ namespace optimizers {
 
         std::map<int, int> emb_posi;
         _SumUpdates(emb_posi);
-
         for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
             for (int device = 0; device < this->_numDevice(); ++device){
                 cudaSetDevice(device);
                 int N = this->_layersize() * device;
                 if (i == 1){
                     layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers(device)[i].get() );
+		    int max_length = layer->parallelSequences() * layer->maxSeqLength();
                     if (layer->type() != "lookup") continue;
                     //update embeddings in lookup layer
                     int w, p;
@@ -205,6 +205,7 @@ namespace optimizers {
                           layer->get_emb(w)->replace(emb);
                       }
                       ++j;
+                      if (j >= max_length) j = 0;
                     }
                     continue;
                 }

@@ -25,6 +25,7 @@
 
 #include "../NeuralNetwork.hpp"
 #include "../corpus/Corpus.hpp"
+#include <chrono>
 
 
 namespace optimizers {
@@ -38,6 +39,7 @@ namespace optimizers {
     class lmOptimizer
     {
         typedef typename TDevice::real_vector real_vector;
+        typedef typename  std::chrono::time_point<std::chrono::system_clock> time_point;
 
     private:
         NeuralNetwork<TDevice> &m_neuralNetwork;
@@ -65,6 +67,7 @@ namespace optimizers {
         int    m_numDevice;
         int    m_tmp_show;
 
+	time_point m_start_time; 
         std::vector<real_vector> m_curWeightUpdates;
         std::vector<Cpu::real_vector> m_allWeightUpdates;
         std::vector<Cpu::real_vector> m_UpdateSums;
