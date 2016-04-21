@@ -154,8 +154,8 @@ namespace optimizers {
                 internal::showProgress(m_curEpoch, error / consume_sequences, (float)consume_sequences / (float)ds.totalSequences());
 	    time_point now =  std::chrono::system_clock::now();
 	    auto spend_time = now - m_start_time;
-	    auto hour = std::chrono::duration_cast<std::chrono::minutes>(spend_time).count();
-	    if(hour >= 10){
+	    auto hour = std::chrono::duration_cast<std::chrono::hours>(spend_time).count();
+	    if(hour >= 100){
 		if(m_tmp_show > 0)
 		    printf("\n");
 		break;
@@ -168,7 +168,7 @@ namespace optimizers {
             else                  _updateWeightsMultiGpu();
         }
 
-        // normalize the errors
+        // normalize the errors : default
         if (!m_errorType)
             error /= ds.totalSequences();
         else  // perplexity
@@ -438,7 +438,6 @@ namespace optimizers {
 
 	    m_start_time = std::chrono::system_clock::now();
 
-printf("line %d\n", __LINE__);
             // calculate the validation error and store the weights if we a new lowest error
             if (!m_validationSet.empty() && m_curEpoch % m_validateEvery == 0) {
                 m_curValidationError = _processDataSet(m_validationSet, false, &m_curValidationClassError);
@@ -454,11 +453,9 @@ printf("line %d\n", __LINE__);
                 }
             }
             else if (m_validationSet.empty()) {
-printf("line %d\n", __LINE__);
                 m_epochsSinceLowestError = 0;
                 _storeWeights();
             }
-printf("line %d\n", __LINE__);
 
             // calculate the test error
             if (!m_testSet.empty() && m_curEpoch % m_testEvery == 0)
@@ -466,10 +463,8 @@ printf("line %d\n", __LINE__);
 
             // check if we did not get a new lowest error for some training epochs
             // or if we reached the maximum number of training epochs
-printf("line %d\n", __LINE__);
             if (m_epochsSinceLowestError >= m_maxEpochsNoBest || (m_maxEpochs >= 0 && m_curEpoch >= m_maxEpochs)) {
                 _restoreWeights();
-printf("line %d\n", __LINE__);
                 m_finished = true;
             }
         }

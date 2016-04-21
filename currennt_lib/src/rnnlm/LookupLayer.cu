@@ -289,11 +289,61 @@ namespace layers {
         */  // no need
         m_wdict = *(wdic);
     }
-
     template <typename TDevice>
     LookupLayer<TDevice>::~LookupLayer()
     {
     }
+
+    // for loadEmbeddings
+    void Loadvector(Cpu::real_vector* vec, const std::stringstream& ss){
+        std::string item;
+        while(std::getline(ss, item, ' ')) {
+            // loading vector
+            (*vec)[i] = (real_t)std::stof(item);
+        }
+    }
+    /**
+         * this method loads word and its embeddings from word2vec-style txtfile
+         * if a word which is in 'm_wdict' exists in this file,
+         * this method replace its embedding with the loaded embeddings.
+
+         input : filename(std::stirng) -- filename of txt-file
+    */
+    template <typename TDevice>
+    void LookupLayer<TDevice>::loadEmbeddings(const std::string& filename)
+    {
+        std::ifstream ifs(filename);
+        std::string line, word;
+        int size;
+        long long int wordnum;
+
+        // start should be "TheNumberOfWord(wordnum) Dimension(size)"
+        // load first line
+        std::getline(ifs, line);
+        sscanf(line.data(), "%lld %d", &wordnum, &size);
+
+        Cpu::real_vector vec;
+        real_vector Dvec;
+        vec.resize(size);
+        Dvec.resize(size);
+
+        while(std::getline(ifs, line)) {
+            // loading word
+            std::stringstream ss(line);
+            std::getline(ss, word, ' ');
+            auto it = m_wdict.find(word);
+            if (it == m_wdict.end()) continue;
+
+            // loading word
+            Loadvector(&vec, ss);
+
+            //copying to device (this is needed if TDevice==GPU)
+            thrust::copy(vec.begin(), vec.end(), Dvec.begin());
+            // replace embedding
+            m_embeddings[it->second]->replace(&Dvec);
+        }
+    }
+
 
     template <typename TDevice>
     const std::string& LookupLayer<TDevice>::type() const

@@ -183,6 +183,8 @@ int trainerMain(const Configuration &config)
 
         NeuralNetwork<TDevice> neuralNetwork(netDoc, parallelSequences, maxSeqLength, inputSize, outputSize, vocab_size, config.devices());
         neuralNetwork.setWordDict(&_wordDict);
+        if (config.pretrainedEmbeddings() != "")
+            neuralNetwork.loadEmbeddings(config.pretrainedEmbeddings());
 
         if (!trainingSet->empty() && trainingSet->outputPatternSize() != neuralNetwork.postOutputLayer().size())
             throw std::runtime_error("Post output layer size != target pattern size of the training set");
