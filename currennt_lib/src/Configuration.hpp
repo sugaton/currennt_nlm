@@ -106,6 +106,7 @@ private:
     std::string m_autosavePrefix;
     std::string m_continueFile;
     std::string m_cachePath;
+    std::string m_embeddingFile;
 
     std::vector<std::string> m_trainingFiles;
     std::vector<std::string> m_validationFiles;
@@ -476,6 +477,8 @@ public:
      * @return The autosave file from which training will continue
      */
     const std::string& continueFile() const;
+
+    const std::string& pretrainedEmbeddings() const;
 };
 
 
