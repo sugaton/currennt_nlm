@@ -27,6 +27,7 @@ namespace data_sets {
 
     DataSetFraction::DataSetFraction()
     {
+	m_inputType=0;
     }
 
     DataSetFraction::~DataSetFraction()

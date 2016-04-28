@@ -208,13 +208,12 @@ int trainerMain(const Configuration &config)
             fflush(stdout);
             boost::scoped_ptr<optimizers::lmOptimizer<TDevice> > optimizer;
             optimizers::lmSteepestDescentOptimizer<TDevice> *sdo;
-
             switch (config.optimizer()) {
             case Configuration::OPTIMIZER_STEEPESTDESCENT:
                 sdo = new optimizers::lmSteepestDescentOptimizer<TDevice>(
                     neuralNetwork, *trainingSet, *validationSet, *testSet,
                     config.maxEpochs(), config.maxEpochsNoBest(), config.validateEvery(), config.testEvery(),
-                    config.learningRate(), config.momentum()
+                    config.learningRate(), config.momentum(), config.temp_show()
                     );
                 optimizer.reset(sdo);
                 break;
@@ -283,7 +282,7 @@ int trainerMain(const Configuration &config)
 
                 if (!validationSet->empty() && optimizer->currentEpoch() % config.validateEvery() == 0) {
                     if (optimizer->epochsSinceLowestValidationError() == 0) {
-                        infoRows += printfRow("  yes   \n");
+                        ///infoRows += printfRow("  yes   \n");
                         if (config.autosaveBest()) {
                             std::stringstream saveFileS;
                             if (config.autosavePrefix().empty()) {
@@ -293,8 +292,9 @@ int trainerMain(const Configuration &config)
                                 else
                                     saveFileS << config.networkFile();
                             }
-                            else
+                            else{
                                 saveFileS << config.autosavePrefix();
+			    }
                             saveFileS << ".best.jsn";
                             saveNetwork(neuralNetwork, saveFileS.str());
                         }

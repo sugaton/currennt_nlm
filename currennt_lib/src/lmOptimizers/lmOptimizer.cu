@@ -54,7 +54,7 @@ namespace internal{
     }
 
     void showProgress(int curEpoch, real_t error, real_t progress){
-        printf("\r %5d | on training:\t %8.1f  progress: %f%%", curEpoch, (float)error, (float)progress * 100);
+        printf("\n %5d | on training:\t %8.1f  progress: %f%%", curEpoch, (float)error, (float)progress * 100);
         fflush(stdout);
     }
     void refreshLine(int curEpoch){ printf("\r %5d | ", curEpoch); }
@@ -152,6 +152,15 @@ namespace optimizers {
             ++loop_count;
             if(m_tmp_show > 0 && loop_count % m_tmp_show ==0)
                 internal::showProgress(m_curEpoch, error / consume_sequences, (float)consume_sequences / (float)ds.totalSequences());
+	    time_point now =  std::chrono::system_clock::now();
+	    auto spend_time = now - m_start_time; 	
+	    auto hour = std::chrono::duration_cast<std::chrono::hours>(spend_time).count();
+	    if(hour >= m_limit_hour){
+		if(m_tmp_show > 0)
+		    printf("\n");
+		m_finished = true;
+		break;
+	    }
         }
 
         // update weights for batch learning
@@ -282,7 +291,7 @@ namespace optimizers {
     template <typename TDevice>
     lmOptimizer<TDevice>::lmOptimizer(NeuralNetwork<TDevice> &neuralNetwork, data_sets::Corpus &trainingSet,
                                    data_sets::Corpus &validationSet, data_sets::Corpus &testSet,
-                                   int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery, int temp_show)
+                                   int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery, int temp_show, int limit_hour)
         : m_neuralNetwork             (neuralNetwork)
         , m_trainingSet               (trainingSet)
         , m_validationSet             (validationSet)
@@ -303,8 +312,10 @@ namespace optimizers {
         , m_curTestClassError         (0)
         , m_errorType                 (0)
         , m_tmp_show                  (temp_show)
+	, m_limit_hour 	              (limit_hour)
     {
         // initialize the best weights vectors
+	m_start_time = std::chrono::system_clock::now(); 
         m_numDevice = m_neuralNetwork.getNumDevice();
         m_bestWeights.resize(m_neuralNetwork.layers().size());
         m_allWeightUpdates.resize(m_neuralNetwork.layers().size());
@@ -427,6 +438,8 @@ namespace optimizers {
             // train one epoch and update the weights
             m_curTrainingError = _processDataSet(m_trainingSet, true, &m_curTrainingClassError);
 
+	    m_start_time = std::chrono::system_clock::now(); 
+
             // calculate the validation error and store the weights if we a new lowest error
             if (!m_validationSet.empty() && m_curEpoch % m_validateEvery == 0) {
                 m_curValidationError = _processDataSet(m_validationSet, false, &m_curValidationClassError);
@@ -452,7 +465,7 @@ namespace optimizers {
 
             // check if we did not get a new lowest error for some training epochs
             // or if we reached the maximum number of training epochs
-            if (m_epochsSinceLowestError >= m_maxEpochsNoBest || (m_maxEpochs >= 0 && m_curEpoch >= m_maxEpochs)) {
+            if (m_epochsSinceLowestError >= m_maxEpochsNoBest || (m_maxEpochs >= 0 && m_curEpoch >= m_maxEpochs) || m_finished) {
                 _restoreWeights();
                 m_finished = true;
             }

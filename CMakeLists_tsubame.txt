@@ -1,0 +1,41 @@
+PROJECT(currennt_nlm)
+
+CMAKE_MINIMUM_REQUIRED (VERSION 2.8)
+
+set(Boost_USE_STATIC_LIBS ON) 
+set(Boost_USE_MULTITHREADED ON)  
+
+SET (CMAKE_INCLUDE_PATH ${CMAKE_INCLUDE_PATH} "/home/usr8/14M53551/local/include")
+SET (CMAKE_LIBRARY_PATH ${CMAKE_LIBRARY_PATH} "/home/usr8/14M53551/local/lib" "/home/usr8/14M53551/local/lib64")
+SET (BOOST_ROOT "/home/usr8/14M53551/local")
+#SET (BOOST_INCLUDE_DIR "/home/usr8/14M53551/local/include")
+#SET (BOOST_LIBRARY_DIR "/home/usr8/14M53551/local/lib")
+#SET (Boost_ADDITIONAL_VERSIONS "1.59.0")
+FIND_PACKAGE (CUDA)
+FIND_PACKAGE (Boost 1.48.0 REQUIRED COMPONENTS program_options system filesystem thread random  REQUIRED)
+
+INCLUDE_DIRECTORIES (${Boost_INCLUDE_DIRS} ${CMAKE_INCLUDE_PATH})
+
+LINK_DIRECTORIES (${Boost_LIBRARY_DIRS} ${CMAKE_LIBRARY_PATH})
+
+
+
+SET (CMAKE_BUILD_TYPE Release)
+SET (CUDA_NVCC_FLAGS "${CUDA_NVCC_FLAGS} -O3 -arch=sm_35 -DNEWSOFTMAX) #-ccbin /home/usr8/14M53551/local/bin/g++")
+SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -Wno-format-security -std=c++11 -L/home/usr8/14M53551/local/lib -L/home/usr8/14M53551/local/lib64")
+message(STATUS ${CUDA_NVCC_FLAGS})
+message(STATUS ${CMAKE_CXX_FLAGS})
+message(STATUS ${Boost_FOUND} ${Boost_LIBRARIES})
+message(STATUS ${Boost_INCLUDE_DIRS})
+message(STATUS ${Boost_LIBRARY_DIRS})
+FILE (GLOB_RECURSE src_lib     currennt_lib/*.cpp currennt_lib/*.hpp     currennt_lib/*.h     currennt_lib/*.cu     currennt_lib/*.cuh)
+FILE (GLOB_RECURSE src_trainer currennt/*.cpp     currennt/*.hpp         currennt/*.h         currennt/*.cu         currennt/*.cuh)
+
+#LINK_DIRECTORIES (
+
+CUDA_ADD_EXECUTABLE (${PROJECT_NAME} ${src_lib} ${src_trainer})
+
+CUDA_ADD_CUBLAS_TO_TARGET (${PROJECT_NAME})
+
+
+TARGET_LINK_LIBRARIES (${PROJECT_NAME} "boost_program_options" "boost_system" "boost_filesystem" "boost_thread" "boost_random")

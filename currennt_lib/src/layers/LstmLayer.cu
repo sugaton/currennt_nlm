@@ -160,6 +160,32 @@ namespace {
         }
     };
 
+    struct ResortOutputsFnC
+    {
+        int layerSize;
+        int effLayerSize;
+        int maxSize;
+
+        const real_t *fwOutputs;
+        const real_t *bwOutputs;
+
+        __host__ __device__ real_t operator() (const int &outputIdx) const
+        {
+            // calculate indices
+            int patIdx = outputIdx / layerSize;
+            int valIdx = outputIdx % layerSize;
+            int offset = patIdx * effLayerSize + valIdx;
+            //            (patIdx + 2) * effLayerSize + (valIdx - effLayerSize)
+            int offset2 = (patIdx + 1) * effLayerSize + valIdx;
+
+            // store the value
+            if (valIdx < effLayerSize)
+                return fwOutputs[offset];
+            else
+                return (offset2 < maxSize)? bwOutputs[offset2] : (real_t)0.0;
+        }
+    };
+
     struct ResortOutputErrorsFn
     {
         int layerSize;
@@ -184,6 +210,35 @@ namespace {
                 fwOutputErrors[offset] = outputErr;
             else
                 bwOutputErrors[offset - effLayerSize] = outputErr;
+        }
+    };
+
+    struct ResortOutputErrorsFnC
+    {
+        int layerSize;
+        int effLayerSize;
+        int maxSize;
+
+        real_t *fwOutputErrors;
+        real_t *bwOutputErrors;
+
+        __host__ __device__ void operator() (const thrust::tuple<const real_t&, int> &t) const
+        {
+            // unpack the tuple
+            real_t outputErr = t.get<0>();
+            int    outputIdx = t.get<1>();
+
+            // calculate indices
+            int patIdx = outputIdx / layerSize;
+            int valIdx = outputIdx % layerSize;
+            int offset = patIdx * effLayerSize + valIdx;
+            int offset2 = (patIdx + 1) * effLayerSize + valIdx;
+
+            // store the value
+            if (valIdx < effLayerSize)
+                fwOutputErrors[offset] = outputErr;
+            else if (offset2 < maxSize)
+                bwOutputErrors[offset2] = outputErr;
         }
     };
 
@@ -868,9 +923,12 @@ namespace layers {
 
         // resort outputs
         if (m_isBidirectional) {
-            internal::ResortOutputsFn fn;
+            // internal::ResortOutputsFn fn;
+            internal::ResortOutputsFnC fn;
             fn.layerSize    = this->size();
             fn.effLayerSize = this->size() / 2;
+            //
+            fn.maxSize      = (this->size() / 2) * this->parallelSequences() * this->maxSeqLength();
             fn.fwOutputs    = helpers::getRawPointer(m_fw.tmpOutputs);
             fn.bwOutputs    = helpers::getRawPointer(m_bw.tmpOutputs);
 
@@ -891,9 +949,12 @@ namespace layers {
     {
         // for unidirectional LSTM, we can write the output errors directly in the layer output errors vector
         if (m_isBidirectional) {
-            internal::ResortOutputErrorsFn fn;
+            // internal::ResortOutputErrorsFn fn;
+            internal::ResortOutputErrorsFnC fn;
             fn.layerSize      = this->size();
             fn.effLayerSize   = this->size() / 2;
+            // for FnC
+            fn.maxSize      = (this->size() / 2) * this->parallelSequences() * this->maxSeqLength();
             fn.fwOutputErrors = helpers::getRawPointer(m_fw.tmpOutputErrors);
             fn.bwOutputErrors = helpers::getRawPointer(m_bw.tmpOutputErrors);
 

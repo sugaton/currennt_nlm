@@ -30,14 +30,14 @@
 #include "DataSet.hpp"
 #include "../Configuration.hpp"
 
-#include "../netcdf/netcdf.h"
+//#include "../netcdf/netcdf.h"
 
 #include <stdexcept>
 #include <algorithm>
 #include <limits>
 #include <cassert>
 
-
+/*
 namespace {
 namespace internal {
 
@@ -183,8 +183,8 @@ namespace internal {
 
 } // namespace internal
 } // anonymous namespace
-
-
+*/
+/*
 namespace data_sets {
 
     struct thread_data_t
@@ -362,10 +362,11 @@ namespace data_sets {
                     ++offset_out;
                 }
             }
+*/
             /*std::cout << "original inputs: ";
             thrust::copy(inputs.begin(), inputs.end(), std::ostream_iterator<real_t>(std::cout, ";"));
             std::cout << std::endl;*/
-
+/*		
             // target classes
             if (m_isClassificationData) {
                 Cpu::int_vector targetClasses = _loadTargetClassesFromCache(seq);
@@ -406,10 +407,11 @@ namespace data_sets {
                 frac->m_patTypes[timestep * m_parallelSequences + i] = patType;
             }
         }
+*/
         /*std::cout << "inputs for data fraction: ";
         thrust::copy(frac->m_inputs.begin(), frac->m_inputs.end(), std::ostream_iterator<real_t>(std::cout, ";"));
         std::cout << std::endl;*/
-
+/*
         return frac;
     }
 
@@ -713,3 +715,4 @@ namespace data_sets {
     }
 
 } // namespace data_sets
+*/

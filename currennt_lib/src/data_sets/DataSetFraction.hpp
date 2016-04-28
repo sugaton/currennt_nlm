@@ -61,7 +61,7 @@ namespace data_sets {
         Cpu::real_vector    m_outputs;
         Cpu::pattype_vector m_patTypes;
         Cpu::int_vector     m_targetClasses;
-        int m_inputType = 0;  //0: real, 1: int. default: 0
+        int m_inputType;  //0: real, 1: int. default: 0
 
     // private:
     protected:

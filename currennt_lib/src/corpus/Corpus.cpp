@@ -483,7 +483,7 @@ namespace data_sets {
         }
         Cpu::int_vector vec(loadlength);
         for ( int i = 1; i < loadlength; ++i ){
-            vec[i-1] = ( (ids.at(i) > m_max_vocab_size )? m_wordids["<UNK>"] : ids.at(i) );
+            vec[i-1] = ( (ids.at(i) >= m_max_vocab_size )? m_wordids["<UNK>"] : ids.at(i) );
         }
         vec[loadlength-1] = (m_wordids["</s>"]);
         return vec;

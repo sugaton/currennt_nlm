@@ -349,7 +349,7 @@ namespace layers {
                 // printf("next start %d, allsize %d", i * this->size(), this->_outputs().size())
                 if(emb->size() != this->size())
                     throw std::runtime_error("the dimension of loaded embedding does not match this layer's embeddings-size.");
-                assert(i * this->size() + emb->size() <= this->_outputs.size());
+                //assert(i * this->size() + emb->size() <= this->_outputs.size());
                 thrust::copy(emb->begin(), emb->end(), this->_outputs().begin() + i * this->size());
                 ++i;
             }
@@ -382,7 +382,7 @@ namespace layers {
             rapidjson::Value embeddingsSection(rapidjson::kObjectType);
             std::string word = it->first;
             int w = it->second;
-            real_vector* vec = this->get_emb(w)->get_data();
+            real_vector* vec = this->embeddings(w, 0);
             // create and fill the weight arrays
             rapidjson::Value embeddingWeightsArray(rapidjson::kArrayType);
             int emb_size = this->size();
