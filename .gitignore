@@ -1,0 +1,4 @@
+*.cmake
+CMakeCache.txt
+Makefile
+current_nlm
