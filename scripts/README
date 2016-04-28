@@ -7,12 +7,12 @@ network files, etc.
 discriminative_pretraining.pl: Performs discriminative pre-training of N-layer
 networks with linear output layer.
 
-Usage: perl discriminative_pretraining.pl 
-       <in_net> 
-       <net_config> 
-       <work_dir> 
-       <train_nc> <val_nc> <test_nc> 
-       [max_epochs] 
+Usage: perl discriminative_pretraining.pl
+       <in_net>
+       <net_config>
+       <work_dir>
+       <train_nc> <val_nc> <test_nc>
+       [max_epochs]
        [initial_lr lr_decay_factor]
 
 Arguments:
@@ -35,3 +35,15 @@ Arguments:
                 rate, which is multiplied by lr_decay_factor after adding each
                 layer. Thus, the more layers there are, the less aggressive the
                 optimization is.  (EXPERIMENTAL)
+
+
+lookupWeight_from_word2vec: make 'word_dict' section and 'weight' section for lookup-layer from embedding file written by word2vec-style
+
+Usage: ./lookupWeight_from_word2vec <infile> <outfile>
+    infile:    input word2vec-style file:
+                  "N(number of word) d(dimention of embedding)
+						 word1 v11 v12 v13 v14 ... v1d
+						 word2 v21 v22 v23 v24 ... v2d
+						 ....
+						 wordN vN1 vN2 vN3 vN4 ... vNd"
+    outfile:
