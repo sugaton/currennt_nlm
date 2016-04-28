@@ -68,7 +68,6 @@ namespace optimizers {
         int    m_tmp_show;
 	int    m_limit_hour;
 
-
 	time_point m_start_time; 
         std::vector<real_vector> m_curWeightUpdates;
         std::vector<Cpu::real_vector> m_allWeightUpdates;

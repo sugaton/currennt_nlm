@@ -129,6 +129,10 @@ public:
 
     void setWordDict(std::unordered_map<std::string, int> *wdic);
 
+    /*
+        load pretrained embeddings from w2v-style txt-file
+    */
+    void loadEmbeddings(const std::string& filename);
     /**
      * Stores the description of the layers in a JSON tree
      *

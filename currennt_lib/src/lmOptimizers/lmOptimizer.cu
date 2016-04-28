@@ -153,6 +153,7 @@ namespace optimizers {
             if(m_tmp_show > 0 && loop_count % m_tmp_show ==0)
                 internal::showProgress(m_curEpoch, error / consume_sequences, (float)consume_sequences / (float)ds.totalSequences());
 	    time_point now =  std::chrono::system_clock::now();
+
 	    auto spend_time = now - m_start_time; 	
 	    auto hour = std::chrono::duration_cast<std::chrono::hours>(spend_time).count();
 	    if(hour >= m_limit_hour){
@@ -169,7 +170,7 @@ namespace optimizers {
             else                  _updateWeightsMultiGpu();
         }
 
-        // normalize the errors
+        // normalize the errors : default
         if (!m_errorType)
             error /= ds.totalSequences();
         else  // perplexity
@@ -315,7 +316,7 @@ namespace optimizers {
 	, m_limit_hour 	              (limit_hour)
     {
         // initialize the best weights vectors
-	m_start_time = std::chrono::system_clock::now(); 
+	m_start_time = std::chrono::system_clock::now();
         m_numDevice = m_neuralNetwork.getNumDevice();
         m_bestWeights.resize(m_neuralNetwork.layers().size());
         m_allWeightUpdates.resize(m_neuralNetwork.layers().size());
@@ -438,7 +439,7 @@ namespace optimizers {
             // train one epoch and update the weights
             m_curTrainingError = _processDataSet(m_trainingSet, true, &m_curTrainingClassError);
 
-	    m_start_time = std::chrono::system_clock::now(); 
+	    m_start_time = std::chrono::system_clock::now();
 
             // calculate the validation error and store the weights if we a new lowest error
             if (!m_validationSet.empty() && m_curEpoch % m_validateEvery == 0) {

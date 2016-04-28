@@ -182,6 +182,7 @@ Configuration::Configuration(int argc, const char *argv[])
         ("input_right_context", po::value(&m_inputRightContext)->default_value(0), "sets the number of right context frames (last frame is duplicated as necessary)")
         ("output_time_lag",   po::value(&m_outputTimeLag)->default_value(0),              "sets the time lag in the training targets (0 = predict current frame, 1 = predict previous frame, etc.)")
         ("cache_path",        po::value(&m_cachePath)         ->default_value(""),        "sets the cache path where the .nc data is cached for random access")
+        ("pretrainedEmbeddings",po::value(&m_embeddingFile)         ->default_value(""),        "sets the word2vec-style embeddings file (.txt)")
         ;
 
     po::options_description weightsInitializationOptions("Weight initialization options");
@@ -627,6 +628,11 @@ const std::string& Configuration::autosavePrefix() const
 const std::string& Configuration::continueFile() const
 {
     return m_continueFile;
+}
+
+const std::string& Configuration::pretrainedEmbeddings() const
+{
+    return m_embeddingFile;
 }
 
 bool Configuration::revertStd() const

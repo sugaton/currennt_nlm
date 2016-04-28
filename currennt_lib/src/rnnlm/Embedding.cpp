@@ -81,6 +81,7 @@ namespace helpers{
             m_cemb->replace(vec);
         }
     }
+
     // */
     template class Embedding_<Cpu, Cpu>;
     template class Embedding_<Cpu, Gpu>;

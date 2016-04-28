@@ -64,6 +64,15 @@ namespace layers {
         real_vector& _weightUpdates();
 
         /**
+         * this method loads word and its embeddings from word2vec-style txtfile
+         * if a word which is in 'm_wdict' exists in this file,
+         * this method replace its embedding with the loaded embeddings.
+
+         input : filename(std::stirng) -- filename of txt-file
+        */
+        void loadEmbeddings(const std::string& filename);
+
+        /**
          * @see Layer::type()
          */
         virtual const std::string& type() const;

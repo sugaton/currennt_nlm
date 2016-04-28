@@ -157,8 +157,8 @@ NeuralNetwork<TDevice>::~NeuralNetwork()
 template <typename TDevice>
 void NeuralNetwork<TDevice>::setWordDict(std::unordered_map<std::string, int> *wdic)
 {
-    for (int device=0; device < m_layers.size(); ++device){
-	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(m_layers[device][1].get());
+    for (size_t device = 0; device < m_layers.size(); ++device){
+    	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(m_layers[device][1].get());
         // need to Cast, cause cuda code dose not support unordered_map.
         std::map<std::string, int> tmp_map(wdic->begin(), wdic->end());
         if (lookup)
@@ -166,6 +166,17 @@ void NeuralNetwork<TDevice>::setWordDict(std::unordered_map<std::string, int> *w
     }
 }
 
+template <typename TDevice>
+void NeuralNetwork<TDevice>::loadEmbeddings(const std::string& filename)
+{
+    for (size_t device = 0; device < m_layers.size(); ++device){
+        cudaSetDevice(device);
+    	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(m_layers[device][1].get());
+        // need to Cast, cause cuda code dose not support unordered_map.
+        if (lookup)
+            lookup->loadEmbeddings(filename);
+    }
+}
 // TODO is it ok to return m_layers[0] (device 0 layers)?
 template <typename TDevice>
 const std::vector<boost::shared_ptr<layers::Layer<TDevice> > >& NeuralNetwork<TDevice>::layers(const int device) const

@@ -136,7 +136,10 @@ int trainerMain(const Configuration &config)
                 _wordDict = *(trainingSet->dict()); // copy from trainingSet
             }
             else{
-                trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, 1);
+                // TODO add option fixed_dict();
+                //    int iffix = config.fixed_dict()
+                //    trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, iffix);
+                trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, 0);
                 _wordDict = *(trainingSet->dict());
             }
 
@@ -180,6 +183,8 @@ int trainerMain(const Configuration &config)
 
         NeuralNetwork<TDevice> neuralNetwork(netDoc, parallelSequences, maxSeqLength, inputSize, outputSize, vocab_size, config.devices());
         neuralNetwork.setWordDict(&_wordDict);
+        if (config.pretrainedEmbeddings() != "")
+            neuralNetwork.loadEmbeddings(config.pretrainedEmbeddings());
 
         if (!trainingSet->empty() && trainingSet->outputPatternSize() != neuralNetwork.postOutputLayer().size())
             throw std::runtime_error("Post output layer size != target pattern size of the training set");
