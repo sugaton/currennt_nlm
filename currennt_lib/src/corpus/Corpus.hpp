@@ -34,6 +34,7 @@
 #include <vector>
 #include <climits>
 #include <fstream>
+#include <mpi.h>
 
 
 namespace data_sets {
@@ -74,6 +75,12 @@ namespace data_sets {
         Cpu::int_vector _makeInputFromLine(const std::string& line, int *loadLength);
         Cpu::int_vector _makeTargetFromLine(const std::string& line);
         int _getWordId(const std::string& word);
+
+        // for mpi
+        int _wordToIndex(std::string& line, std::vector<int> *v);
+        void _writeTemp(std::string txtfile, std::string outputfile, int size);
+        Cpu::int_vector _makeInputFromBuffer(int* buf, int startpos, int size);
+        Cpu::int_vector _makeTargetFromBuffer(int* buf, int startpos, int size);
 
     private:
         bool             m_fractionShuffling;
@@ -122,6 +129,14 @@ namespace data_sets {
          */
         Corpus(const std::vector<std::string> &ncfiles, int parSeq, real_t fraction=1,
             int truncSeqLength=0,
+            bool fracShuf=false, bool seqShuf=false, real_t noiseDev=0,
+            std::string cachePath = "",
+            std::unordered_map<std::string, int>* wordids=NULL, int constructDict = 0,
+            int max_vocab_size = -1, int appearing_threshold = 5);
+
+        // mpi ver constructor
+        Corpus(const std::string inputfn, const std::string outputfn, const int rank, const int procs,
+            int parSeq, real_t fraction=1, int truncSeqLength=0,
             bool fracShuf=false, bool seqShuf=false, real_t noiseDev=0,
             std::string cachePath = "",
             std::unordered_map<std::string, int>* wordids=NULL, int constructDict = 0,

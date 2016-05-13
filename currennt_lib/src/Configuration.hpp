@@ -107,6 +107,7 @@ private:
     std::string m_continueFile;
     std::string m_cachePath;
     std::string m_embeddingFile;
+    std::string m_lexemeFile;
 
     std::vector<std::string> m_trainingFiles;
     std::vector<std::string> m_validationFiles;
@@ -479,6 +480,7 @@ public:
     const std::string& continueFile() const;
 
     const std::string& pretrainedEmbeddings() const;
+    const std::string& lexeme_file() const;
 };
 
 

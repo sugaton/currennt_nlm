@@ -454,16 +454,16 @@ namespace data_sets {
         std::stringstream ss(line);
         std::string word;
         char delim = ' ';
-        *loadLength = 0;
+        *loadLength = 1; // already counting <s>
         std::deque<int> ids;
         while ( std::getline(ss, word, delim) ){
             ids.push_back(_getWordId(word));
             *loadLength += 1;
         }
-        Cpu::int_vector vec(*loadLength);
+        Cpu::int_vector vec(*loadLength+1);
         vec[0] = m_wordids["<s>"];
         for ( int i = 0; i < *loadLength; ++i ){
-            vec[i] = (ids.at(i));
+            vec[i+1] = (ids.at(i));
         }
         // return std::move(vec);
         return vec;
@@ -481,11 +481,11 @@ namespace data_sets {
             ids.push_back(_getWordId(word));
             ++loadlength;
         }
-        Cpu::int_vector vec(loadlength);
-        for ( int i = 1; i < loadlength; ++i ){
-            vec[i-1] = ( (ids.at(i) >= m_max_vocab_size )? m_wordids["<UNK>"] : ids.at(i) );
+        Cpu::int_vector vec(loadlength + 1);
+        for ( int i = 0; i < loadlength; ++i ){
+            vec[i] = ( (ids.at(i) >= m_max_vocab_size )? m_wordids["<UNK>"] : ids.at(i) );
         }
-        vec[loadlength-1] = (m_wordids["</s>"]);
+        vec[loadlength] = (m_wordids["</s>"]);
         return vec;
     }
 
@@ -596,7 +596,6 @@ namespace data_sets {
             m_fixed_wordDict = true;
         }
 
-        // read the *.nc files
         for (std::vector<std::string>::const_iterator f_itr = txtfiles.begin();
             f_itr != txtfiles.end(); ++f_itr)
         {
@@ -619,7 +618,6 @@ namespace data_sets {
                 while (loadLength > 0){
                     sequence_t seq;
                     seq.originalSeqIdx = k;
-                    seq.originalSeqIdx = seqidxCount;
 
                     // read input patterns and store them in the cache file
                     seq.inputsBegin = m_cacheFile.tellp();
@@ -666,6 +664,205 @@ namespace data_sets {
 
             first_file = false;
         } // txt file loop
+
+        m_totalSequences = m_sequences.size();
+        m_outputPatternSize = std::min(m_max_vocab_size, (int)m_wordids.size());
+        printf("outputPatternSize: %d(m_max_vocab_size %d, m_wordids.size %d)\n", m_outputPatternSize, m_max_vocab_size, m_wordids.size());
+        printf("max_vocab_size %d, m_wordids.size %d)\n", max_vocab_size, INT_MAX);
+        // sort sequences by length
+        if (Configuration::instance().trainingMode())
+            std::sort(m_sequences.begin(), m_sequences.end(), internal::comp_seqs);
+    }
+
+    /// 'for mpi ver constructor'
+    int Corpus::_wordToIndex(std::string& line, std::vector<int> *v) {
+        int c = 0;
+        char delim = ' ';
+        std::string w;
+        std::stringstream ss(line);
+        while (std::getline(ss, w, delim)) {
+            v->push_back(_getWordId(w));
+            ++c;
+        }
+        return c;
+    }
+    // make binary file that will be read by all processes
+    void Corpus::_writeTemp(std::string txtfile, std::string outputfile, int size) {
+        std::ifstream ifs(txtfile);
+        std::ofstream ofs(outputfile, std::ios::out|std::ios::binary);
+
+        std::string line;
+        std::vector<int> v;
+        v.reserve(size*3);
+        int count, padding;
+
+        while (std::getline(ifs, line)) {
+            count = _wordToIndex(line, &v);
+            padding = size - count % size;
+            for (int i = 0; i < padding; ++i) {
+                v.push_back(-1);
+            }
+            // displacements.push_back(offset);
+            ofs.write((char*)v.data(), v.size() * sizeof(int));
+            //showVector(v.data(), v.size());
+            v.clear();
+        }
+        ofs.close();
+    }
+    Cpu::int_vector Corpus::_makeInputFromBuffer(int* buf, int startpos, int size)
+    {
+        Cpu::int_vector vec(size+1);
+        vec[0] = m_wordids["<s>"];
+        for ( int i = 0; i < size; ++i ){
+            vec[i+1] = buf[startpos + i];
+        }
+        return vec;
+    }
+
+    Cpu::int_vector Corpus::_makeTargetFromBuffer(int * buf, int startpos, int size)
+    {
+        Cpu::int_vector vec(size+1);
+        int item;
+        for ( int i = 0; i < size; ++i ){
+            item = buf[startpos + i];
+            vec[i] = ( item >= m_max_vocab_size )? m_wordids["<UNK>"] : item ;
+        }
+        vec[size] = (m_wordids["</s>"]);
+        return vec;
+    }
+    /// end of 'for mpi ver constructor'
+
+    // this constructor is used with mpi
+    Corpus::Corpus(const std::string inputfn, const std::string outputfn, const int rank, const int procs,
+                   int parSeq, real_t fraction, int truncSeqLength, bool fracShuf, bool seqShuf, real_t noiseDev,
+                   std::string cachePath, std::unordered_map<std::string, int>* wordids, int constructDict, int max_vocab_size, int appearing_threshold)
+        : m_fractionShuffling(fracShuf)
+        , m_sequenceShuffling(seqShuf)
+        , m_noiseDeviation   (noiseDev)
+        , m_parallelSequences(parSeq)
+        , m_totalTimesteps   (0)
+        , m_minSeqLength     (std::numeric_limits<int>::max())
+        , m_maxSeqLength     (std::numeric_limits<int>::min())
+        , m_curFirstSeqIdx   (-1)
+        , m_nextid(0)
+        , m_inputPatternSize (1)
+        , m_max_vocab_size( (max_vocab_size == -1)? INT_MAX : max_vocab_size )
+        , m_appearing_threshold(appearing_threshold)
+    {
+        int ret;
+        int ncid;
+
+        m_fixed_wordDict = false;
+        if (wordids != NULL){
+            m_wordids = *wordids;
+           if (!constructDict)
+                m_fixed_wordDict = true;
+            m_nextid = (long long int)m_wordids.size();
+        }
+
+        if (fraction <= 0 || fraction > 1)
+            throw std::runtime_error("Invalid fraction");
+
+        // open the cache file
+        std::string tmpFileName = "";
+        if (cachePath == "") {
+            tmpFileName = (boost::filesystem::temp_directory_path() / boost::filesystem::unique_path()).string();
+        }
+        else {
+            tmpFileName = cachePath + "/" + (boost::filesystem::unique_path()).string();
+        }
+        std::cerr << std::endl << "using cache file: " << tmpFileName << std::endl << "... ";
+        m_cacheFileName = tmpFileName;
+        m_cacheFile.open(tmpFileName.c_str(), std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::trunc);
+        if (!m_cacheFile.good())
+            throw std::runtime_error(std::string("Cannot open temporary file '") + tmpFileName + "'");
+
+        // TODO rewrite  no need?
+        /*
+        if (!m_fixed_wordDict){
+            if (m_wordids.find("<s>") == m_wordids.end())
+                m_wordids["<s>"] = m_nextid++;
+            if (m_wordids.find("</s>") == m_wordids.end())
+                m_wordids["</s>"] = m_nextid++;
+            if (m_wordids.find("<UNK>") == m_wordids.end())
+                m_wordids["<UNK>"] = m_nextid++;
+            _makeWordDict(txtfiles);
+            m_fixed_wordDict = true;
+        }
+        */
+
+        // pre loading and make binary data of mini-batch
+        // TODO: broadcast m_wordids
+        if (rank == 0) {
+            _writeTemp(inputf, outputfn, truncSeqLength);
+        }
+
+        int *buf;
+        int dataAmount;
+        int bufsize = truncSeqLength - 1;
+        {{  // parallel loading from binary file
+            int readsize;
+            MPI::Status status;
+            MPI::File f = MPI::File::Open(MPI::COMM_WORLD, outputfn.c_str(),
+                                          MPI::MODE_RDONLY, MPI::INFO_NULL);
+            MPI::Offset fsize = f.Get_size() / sizeof(int);
+            dataAmount = (fsize / bufsize) / procs; // number-of-mini-batch / procs
+            readsize = dataAmount * bufsize;
+            buf = (int*) malloc(readsize * sizeof(int));
+            f.Set_view(rank * readsize * sizeof(int), MPI_INT, MPI_INT, "native", MPI::INFO_NULL);
+            f.Read((void*)buf, readsize, MPI_INT, status);
+        }} // end of parallel loading from binary file
+
+        {{  //create sequence data
+            std::vector<sequence_t> sequences;
+
+            int seqidxCount = 0;
+            int loadLength, startpos;
+            std::string line;
+            for (int i = 0; i < dataAmount; ++i) {
+                // reading first
+                startpos = i * bufsize;
+                Cpu::int_vector inputs = _makeInputFromBuffer(buf, startpos, bufsize);
+                Cpu::int_vector targets = _makeTargetFromBuffer(buf, startpos, bufsize);
+                m_totalTimesteps += loadLength;
+
+                // making sequence
+                int loaded = 0;
+                {{ // make sequence
+                    sequence_t seq;
+                    seq.originalSeqIdx = i;
+                    seq.length = inputs.size();
+
+                    // read input patterns and store them in the cache file
+                    seq.inputsBegin = m_cacheFile.tellp();
+
+
+                    m_cacheFile.write((const char*)(inputs.data()), sizeof(int) * seq.length);
+                    assert (m_cacheFile.tellp() - seq.inputsBegin == seq.length * sizeof(int));
+
+                    m_minSeqLength = std::min(m_minSeqLength, seq.length);
+                    m_maxSeqLength = std::max(m_maxSeqLength, seq.length);
+
+                    // read targets and store them in the cache file
+                    seq.targetsBegin = m_cacheFile.tellp();
+
+                    // Cpu::int_vector targets = _makeTargetFromLine(line);
+                    m_cacheFile.write((const char*)(targets.data()), sizeof(int) * seq.length);
+                    assert (m_cacheFile.tellp() - seq.targetsBegin == seq.length * sizeof(int));
+                    sequences.push_back(seq);
+                }}
+            }
+
+            // create next fraction data and start the thread
+            m_threadData.reset(new thread_data_t);
+            m_threadData->finished  = false;
+            m_threadData->terminate = false;
+            m_threadData->thread    = boost::thread(&Corpus::_nextFracThreadFn, this);
+
+            m_sequences.insert(m_sequences.end(), sequences.begin(), sequences.end());
+        }} // loading end
+
+        free(buf);
 
         m_totalSequences = m_sequences.size();
         m_outputPatternSize = std::min(m_max_vocab_size, (int)m_wordids.size());
