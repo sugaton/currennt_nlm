@@ -36,6 +36,7 @@ class Configuration
 public:
     enum optimizer_type_t {
         OPTIMIZER_STEEPESTDESCENT,
+        OPTIMIZER_ADAM,
         OPTIMIZER_RPROP
     };
 
@@ -63,6 +64,7 @@ private:
     bool m_shuffleSequences;
     bool m_autosave;
     bool m_autosaveBest;
+    bool m_fixlookup;
 
     optimizer_type_t         m_optimizer;
     distribution_type_t      m_weightsDistribution;
@@ -108,6 +110,7 @@ private:
     std::string m_cachePath;
     std::string m_embeddingFile;
     std::string m_lexemeFile;
+    std::string m_wsdResult;
 
     std::vector<std::string> m_trainingFiles;
     std::vector<std::string> m_validationFiles;
@@ -481,6 +484,8 @@ public:
 
     const std::string& pretrainedEmbeddings() const;
     const std::string& lexeme_file() const;
+    const std::string& wsdResult() const;
+    bool fixedLookup() const;
 };
 
 

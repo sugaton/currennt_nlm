@@ -115,18 +115,23 @@ namespace optimizers {
                 // compute the backward pass and accumulate the weight updates
                 m_neuralNetwork.computeBackwardPass();
 
-                for (int device = 0; device < m_numDevice; ++device){
-                    // case lookup-layer (i = 1)
-                    int N = device * m_layer_size;
-                    {
+                // case lookup-layer (i = 1)
+                {
+                    for (int device = 0; device < m_numDevice; ++device){
+                        int N = device * m_layer_size;
                         layers::LookupLayer<TDevice> *layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers(device)[1].get());
+                        if (!layer || layer->fixed())
+                            continue;
                         if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
                             thrust::transform(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin(), m_curWeightUpdates[N + 1].begin(), thrust::plus<real_t>());
                         else
                         	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin());
                     }
+                }
 
-                    for (size_t i = 2; i < m_neuralNetwork.layers().size()-1; ++i) {
+                for (size_t i = 2; i < m_neuralNetwork.layers().size()-1; ++i) {
+                    for (int device = 0; device < m_numDevice; ++device){
+                        int N = device * m_layer_size;
                         layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
                         if (!layer)
                             continue;
@@ -154,7 +159,7 @@ namespace optimizers {
                 internal::showProgress(m_curEpoch, error / consume_sequences, (float)consume_sequences / (float)ds.totalSequences());
 	    time_point now =  std::chrono::system_clock::now();
 
-	    auto spend_time = now - m_start_time; 	
+	    auto spend_time = now - m_start_time;
 	    auto hour = std::chrono::duration_cast<std::chrono::hours>(spend_time).count();
 	    if(hour >= m_limit_hour){
 		if(m_tmp_show > 0)

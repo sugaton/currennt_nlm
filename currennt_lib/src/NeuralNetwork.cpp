@@ -344,11 +344,30 @@ std::vector<std::vector<std::vector<real_t> > > NeuralNetwork<TDevice>::getOutpu
 }
 
 template <typename TDevice>
+typename NeuralNetwork<TDevice>::real_vector& NeuralNetwork<TDevice>::last_layer()
+{
+    layers::TrainableLayer<TDevice> &ol = static_cast<layers::TrainableLayer<TDevice>&>(*m_layers[0][m_layers.at(0).size()-3]);
+    return ol.outputs();
+}
+
+template <typename TDevice>
 int NeuralNetwork<TDevice>::getNumDevice()
 {
     return (int)m_layers.size();
 }
 
+
+template <typename TDevice>
+void NeuralNetwork<TDevice>::fixLookup()
+{
+    for (size_t device = 0; device < m_layers.size(); ++device){
+        cudaSetDevice(device);
+    	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(m_layers[device][1].get());
+        // need to Cast, cause cuda code dose not support unordered_map.
+        if (lookup)
+            lookup->fixEmb();
+    }
+}
 
 // explicit template instantiations
 template class NeuralNetwork<Cpu>;

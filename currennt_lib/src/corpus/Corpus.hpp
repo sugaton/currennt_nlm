@@ -34,8 +34,12 @@
 #include <vector>
 #include <climits>
 #include <fstream>
+
+#ifdef MPI
+
 #include <mpi.h>
 
+#endif
 
 namespace data_sets {
 
@@ -135,12 +139,14 @@ namespace data_sets {
             int max_vocab_size = -1, int appearing_threshold = 5);
 
         // mpi ver constructor
+#ifdef MPI
         Corpus(const std::string inputfn, const std::string outputfn, const int rank, const int procs,
             int parSeq, real_t fraction=1, int truncSeqLength=0,
             bool fracShuf=false, bool seqShuf=false, real_t noiseDev=0,
             std::string cachePath = "",
             std::unordered_map<std::string, int>* wordids=NULL, int constructDict = 0,
             int max_vocab_size = -1, int appearing_threshold = 5);
+#endif
         /**
          * Destructor
          */
@@ -246,6 +252,8 @@ namespace data_sets {
          * @return pointer of unordered_map (m_wordids)
          */
         std::unordered_map<std::string, int>* dict();
+
+        boost::shared_ptr<CorpusFraction> getNewFrac();
 
     };
 

@@ -454,16 +454,16 @@ namespace data_sets {
         std::stringstream ss(line);
         std::string word;
         char delim = ' ';
-        *loadLength = 1; // already counting <s>
         std::deque<int> ids;
+        ids.push_back(m_wordids["<s>"]);
+        *loadLength = 1; // already counting <s>
         while ( std::getline(ss, word, delim) ){
             ids.push_back(_getWordId(word));
             *loadLength += 1;
         }
-        Cpu::int_vector vec(*loadLength+1);
-        vec[0] = m_wordids["<s>"];
+        Cpu::int_vector vec(*loadLength);
         for ( int i = 0; i < *loadLength; ++i ){
-            vec[i+1] = (ids.at(i));
+            vec[i] = (ids.at(i));
         }
         // return std::move(vec);
         return vec;
@@ -732,6 +732,7 @@ namespace data_sets {
     }
     /// end of 'for mpi ver constructor'
 
+#ifdef MPI
     // this constructor is used with mpi
     Corpus::Corpus(const std::string inputfn, const std::string outputfn, const int rank, const int procs,
                    int parSeq, real_t fraction, int truncSeqLength, bool fracShuf, bool seqShuf, real_t noiseDev,
@@ -794,7 +795,7 @@ namespace data_sets {
         // pre loading and make binary data of mini-batch
         // TODO: broadcast m_wordids
         if (rank == 0) {
-            _writeTemp(inputf, outputfn, truncSeqLength);
+            _writeTemp(inputfn, outputfn, truncSeqLength);
         }
 
         int *buf;
@@ -872,7 +873,7 @@ namespace data_sets {
         if (Configuration::instance().trainingMode())
             std::sort(m_sequences.begin(), m_sequences.end(), internal::comp_seqs);
     }
-
+#endif
     Corpus::~Corpus()
     {
         // terminate the next fraction thread
@@ -983,6 +984,12 @@ namespace data_sets {
     std::unordered_map<std::string, int>* Corpus::dict()
     {
         return &m_wordids;
+    }
+
+    boost::shared_ptr<CorpusFraction> Corpus::getNewFrac()
+    {
+        boost::shared_ptr<CorpusFraction> p(new CorpusFraction());
+        return p;
     }
 
 } // namespace data_sets

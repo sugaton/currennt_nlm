@@ -119,6 +119,7 @@ namespace layers {
         // , m_internalWeightsPerBlock(internalWeightsPerBlock)
         , m_bias                   (layerChild->HasMember("bias") ? static_cast<real_t>((*layerChild)["bias"].GetDouble()) : 0)
         , m_learningRate           (layerChild->HasMember("learningRate") ? static_cast<real_t>((*layerChild)["learningRate"].GetDouble()) : -1)
+        , m_fixed                  (false)
     {
 
         Cpu::real_vector weights;
@@ -504,7 +505,23 @@ namespace layers {
         return m_weightUpdates;
     }
 
+    template <typename TDevice>
+    size_t LookupLayer<TDevice>::lookupSize() const
+    {
+        return m_embeddings.size();
+    }
 
+    template <typename TDevice>
+    void LookupLayer<TDevice>::fixEmb()
+    {
+        m_fixed = true;
+    }
+
+    template <typename TDevice>
+    bool LookupLayer<TDevice>::fixed() const
+    {
+        return m_fixed;
+    }
     // explicit template instantiations
     template class LookupLayer<Cpu>;
     template class LookupLayer<Gpu>;

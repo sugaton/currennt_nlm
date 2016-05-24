@@ -158,6 +158,7 @@ Configuration::Configuration(int argc, const char *argv[])
         ("max_lookup_size",        po::value(&m_max_lookup_size)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
         ("max_vocab_size",        po::value(&m_max_vocab_size)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
         ("temporal_show",        po::value(&m_temp_show)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
+        ("fixedLookup",        po::value(&m_fixlookup)   ->default_value(false), "if this is true, system don't update input embeddings")
         ;
 
     po::options_description autosaveOptions("Autosave options");
@@ -184,6 +185,7 @@ Configuration::Configuration(int argc, const char *argv[])
         ("cache_path",        po::value(&m_cachePath)         ->default_value(""),        "sets the cache path where the .nc data is cached for random access")
         ("pretrainedEmbeddings",po::value(&m_embeddingFile)         ->default_value(""),        "sets the word2vec-style embeddings file (.txt)")
         ("lexemeEmbeddings",po::value(&m_lexemeFile)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
+        ("wsdResult",po::value(&m_wsdResult)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
         ;
 
     po::options_description weightsInitializationOptions("Weight initialization options");
@@ -268,8 +270,8 @@ Configuration::Configuration(int argc, const char *argv[])
         boost::algorithm::split(m_feedForwardInputFiles, feedForwardInputFileList, boost::algorithm::is_any_of(";,"), boost::algorithm::token_compress_on);
 
     // check the optimizer string
-    if (optimizerString == "rprop")
-        m_optimizer = OPTIMIZER_RPROP;
+    if (optimizerString == "adam")
+        m_optimizer = OPTIMIZER_ADAM;
     else if (optimizerString == "steepest_descent")
         m_optimizer = OPTIMIZER_STEEPESTDESCENT;
     else {
@@ -636,12 +638,22 @@ const std::string& Configuration::pretrainedEmbeddings() const
     return m_embeddingFile;
 }
 
-const std::string& Configuration::pretrainedEmbeddings() const
+const std::string& Configuration::lexeme_file() const
 {
     return m_lexemeFile;
+}
+
+const std::string& Configuration::wsdResult() const
+{
+    return m_wsdResult;
 }
 
 bool Configuration::revertStd() const
 {
     return m_revertStd;
+}
+
+bool Configuration::fixedLookup() const
+{
+    return m_fixlookup;
 }

@@ -24,7 +24,7 @@
 #   pragma warning (disable: 4244) // thrust/iterator/iterator_adaptor.h(121): warning C4244: '+=' : conversion from '__int64' to 'int', possible loss of data
 #endif
 
-#include "lmSteepestDescentOptimizer.hpp"
+#include "Adam.hpp"
 #include "../layers/TrainableLayer.hpp"
 #include "../rnnlm/LookupLayer.hpp"
 #include "../helpers/getRawPointer.cuh"
@@ -40,23 +40,37 @@ namespace {
 
     struct UpdateWeightFn
     {
-        real_t learningRate;
-        real_t momentum;
+        real_t beta1;
+        real_t beta2;
+        real_t eps;
+        real_t alpha;
+        real_t beta1t;
+        real_t beta2t;
 
-        const real_t *weights;
-        const real_t *weightUpdates;
-        real_t       *weightDeltas;
+        real_t *m;
+        real_t *v;
 
-        __host__ __device__ real_t operator() (const int &weightIdx)
+
+
+        const real_t *theta;//weights;
+        const real_t *g; //weightUpdates;
+        // real_t       *weightDeltas;
+
+        __host__ __device__ real_t operator() (const int &i)
         {
             // calculate and store the weight delta
-            real_t delta = momentum * weightDeltas[weightIdx] - learningRate * weightUpdates[weightIdx];
-            weightDeltas[weightIdx] = delta;
+            // real_t delta = - learningRate * weightUpdates[weightIdx];
+            // weightDeltas[weightIdx] = delta;
+            m[i] = beta1 * (m[i]) + (1 - beta1) * g[i];
+            v[i] = beta2 * (v[i]) + (1 - beta2) * g[i] * g[i];
+            //*beta1t *= beta1;
+            //*beta2t *= beta2;
 
+            return theta[i] - ( alpha / (1 - beta1t) * (m[i] / (sqrtf(v[i] / (1 - beta2t)) + eps)) );
             // calculate the new weight
-            real_t newWeight = weights[weightIdx] + delta;
+            //return theta[i] + delta;
 
-            return newWeight;
+            //return newWeight;
         }
     };
 
@@ -67,24 +81,35 @@ namespace {
 namespace optimizers {
 
     template <typename TDevice>
-    void lmSteepestDescentOptimizer<TDevice>::_updateWeights()
+    void Adam<TDevice>::_updateWeights()
     {
         internal::UpdateWeightFn updateWeightFn;
-        updateWeightFn.momentum     = m_momentum;
+
+        updateWeightFn.beta1         = m_beta1;
+        updateWeightFn.beta2         = m_beta2;
+        updateWeightFn.eps           = m_eps;
+        updateWeightFn.alpha         = m_learningRate;
 
         for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
             if (i == 1){
                 layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers()[i].get() );
-                if (layer->type() != "lookup") continue;
+                if (layer->type() != "lookup")
+                    continue;
+                if (layer->fixed())
+                    continue;
                 //update embeddings in lookup layer
                 int w;
                 for (int j = 0; j < layer->precedingLayer().intoutputs().size(); ++j){
                     w = layer->precedingLayer().intoutputs()[j];
                     real_vector* emb = layer->embeddings(w, j);  // if embeddings(w, i) is on the gpu memory, emb has the direct raw pointer of embeddings
                                                       // if it is on the cpu memory, emb is the temporal device vector(m_device_vectors.at(i)), thus we should feed back to original space by calling Embedding.replace()
-                    updateWeightFn.weights       = helpers::getRawPointer(*emb);
-                    updateWeightFn.weightUpdates = helpers::getRawPointer(this->_curWeightUpdates()[1]) + j * layer->size();
-                    updateWeightFn.weightDeltas  = helpers::getRawPointer(m_weightDeltas[1]) + j * layer->size();
+
+                    updateWeightFn.beta1t        = m_beta1t_emb[w];
+                    updateWeightFn.beta2t        = m_beta2t_emb[w];
+                    updateWeightFn.m             = m_moment[0] + m_MLookupStart + w * layer->size(); //pointer
+                    updateWeightFn.v             = m_second_moment[0] + m_MLookupStart + w * layer->size(); //pointer
+                    updateWeightFn.theta         = helpers::getRawPointer(*emb);
+                    updateWeightFn.g             = helpers::getRawPointer(this->_curWeightUpdates()[1]) + j * layer->size();
 
                     thrust::transform(
                         thrust::counting_iterator<int>(0),
@@ -95,6 +120,8 @@ namespace optimizers {
                   if ( layer->get_emb(w)->type() != std::string(typeid(TDevice).name()) ){
                       layer->get_emb(w)->replace(emb);
                   }
+                  m_beta1t_emb[w] *= m_beta1t;
+                  m_beta2t_emb[w] *= m_beta2t;
                 }
                 continue;
             }
@@ -103,14 +130,14 @@ namespace optimizers {
             if (!layer)
                 continue;
 
-            updateWeightFn.learningRate = m_learningRate;
-            if (layer->learningRate() >= 0.0)
-                updateWeightFn.learningRate = layer->learningRate();
             //std::cout << "layer " << layer->name() << ": learning rate " << updateWeightFn.learningRate << std::endl;
 
-            updateWeightFn.weights       = helpers::getRawPointer(layer->weights());
-            updateWeightFn.weightUpdates = helpers::getRawPointer(this->_curWeightUpdates()[i]);
-            updateWeightFn.weightDeltas  = helpers::getRawPointer(m_weightDeltas[i]);
+            updateWeightFn.beta1t        = m_beta1t;
+            updateWeightFn.beta2t        = m_beta2t;
+            updateWeightFn.m             = m_moment[0] + m_MStart[i]; //pointer
+            updateWeightFn.v             = m_second_moment[0] + m_MStart[i]; //pointer
+            updateWeightFn.theta         = helpers::getRawPointer(layer->weights());
+            updateWeightFn.g             = helpers::getRawPointer(this->_curWeightUpdates()[i]);
 
             thrust::transform(
                 thrust::counting_iterator<int>(0),
@@ -118,14 +145,16 @@ namespace optimizers {
                 layer->weights().begin(),
                 updateWeightFn
                 );
-      }
+        }
+        m_beta1t *= m_beta1;
+        m_beta2t *= m_beta2;
     }
 
     /**
      * Stores the sum of updates into _UpdateSums()
      **/
     template <typename TDevice>
-    void lmSteepestDescentOptimizer<TDevice>::_SumUpdates(std::map<int, int> &emb_posi){
+    void Adam<TDevice>::_SumUpdates(std::map<int, int> &emb_posi){
 
         for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
               thrust::fill(this->_UpdateSums()[i].begin(), this->_UpdateSums()[i].end(), 0.0);
@@ -144,8 +173,10 @@ namespace optimizers {
                                   pls);
             }
             //  for lookup
-            thrust::copy(this->_curWeightUpdates()[1 + N].begin(), this->_curWeightUpdates()[1 + N].end(), this->_allWeightUpdates()[1].begin());
             layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers(device)[1].get() );
+            if (layer->fixed())
+                return;
+            thrust::copy(this->_curWeightUpdates()[1 + N].begin(), this->_curWeightUpdates()[1 + N].end(), this->_allWeightUpdates()[1].begin());
             int d = layer->size();
             for (int i = 0; i < layer->precedingLayer().intoutputs().size(); ++i){
                 int w = layer->precedingLayer().intoutputs()[i];
@@ -163,10 +194,14 @@ namespace optimizers {
     }
 
     template <typename TDevice>
-    void lmSteepestDescentOptimizer<TDevice>::_updateWeightsMultiGpu()
+    void Adam<TDevice>::_updateWeightsMultiGpu()
     {
         internal::UpdateWeightFn updateWeightFn;
-        updateWeightFn.momentum     = m_momentum;
+
+        updateWeightFn.beta1         = m_beta1;
+        updateWeightFn.beta2         = m_beta2;
+        updateWeightFn.eps           = m_eps;
+        updateWeightFn.alpha         = m_learningRate;
 
         std::map<int, int> emb_posi;
         _SumUpdates(emb_posi);
@@ -176,8 +211,10 @@ namespace optimizers {
                 int N = this->_layersize() * device;
                 if (i == 1){
                     layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers(device)[i].get() );
-		    int max_length = layer->parallelSequences() * layer->maxSeqLength();
+            		    int max_length = layer->parallelSequences() * layer->maxSeqLength();
                     if (layer->type() != "lookup") continue;
+                    if (layer->fixed())
+                        continue;
                     //update embeddings in lookup layer
                     int w, p;
                     int j = 0;
@@ -191,14 +228,18 @@ namespace optimizers {
                                     this->_UpdateSums()[i].begin() + (p+1) * layer->size(),
                                     this->_curWeightUpdates()[1 + N].begin() + j * layer->size());
 
-                        updateWeightFn.weights       = helpers::getRawPointer(*emb);
-                        updateWeightFn.weightUpdates = helpers::getRawPointer(this->_curWeightUpdates()[1 + N]) + j * layer->size();
-                        updateWeightFn.weightDeltas  = helpers::getRawPointer(m_weightDeltas[1 + N]) + j * layer->size();
+
+                        updateWeightFn.beta1t        = m_beta1t_emb[w];
+                        updateWeightFn.beta2t        = m_beta2t_emb[w];
+                        updateWeightFn.m             = (m_moment[device] + m_MLookupStart + w * layer->size()); //pointer
+                        updateWeightFn.v             = (m_second_moment[device] + m_MLookupStart + w * layer->size()); //pointer
+                        updateWeightFn.theta         = helpers::getRawPointer(*emb);
+                        updateWeightFn.g             = helpers::getRawPointer(this->_curWeightUpdates()[1]) + j * layer->size();
 
                         thrust::transform(
                             thrust::counting_iterator<int>(0),
                             thrust::counting_iterator<int>((int)emb->size()),
-                            emb->begin(),
+                              emb->begin(),
                             updateWeightFn
                             );
                       if ( layer->get_emb(w)->type() != std::string(typeid(TDevice).name()) ){
@@ -206,6 +247,8 @@ namespace optimizers {
                       }
                       ++j;
                       if (j >= max_length) j = 0;
+                      m_beta1t_emb[w] *= m_beta1t;
+                      m_beta2t_emb[w] *= m_beta2t;
                     }
                     continue;
                 }
@@ -214,14 +257,17 @@ namespace optimizers {
                 if (!layer)
                     continue;
                 thrust::copy(this->_UpdateSums()[i].begin(), this->_UpdateSums()[i].end(), this->_curWeightUpdates()[i + N].begin());
-                updateWeightFn.learningRate = m_learningRate;
+                updateWeightFn.alpha = m_learningRate;
                 if (layer->learningRate() >= 0.0)
-                    updateWeightFn.learningRate = layer->learningRate();
+                    updateWeightFn.alpha = layer->learningRate();
                 //std::cout << "layer " << layer->name() << ": learning rate " << updateWeightFn.learningRate << std::endl;
 
-                updateWeightFn.weights       = helpers::getRawPointer(layer->weights());
-                updateWeightFn.weightUpdates = helpers::getRawPointer(this->_curWeightUpdates()[i + N]);
-                updateWeightFn.weightDeltas  = helpers::getRawPointer(m_weightDeltas[i + N]);
+                updateWeightFn.beta1t        = m_beta1t;
+                updateWeightFn.beta2t        = m_beta2t;
+                updateWeightFn.m             = m_moment[device] + m_MStart[i]; //pointer
+                updateWeightFn.v             = m_second_moment[device] + m_MStart[i]; //pointer
+                updateWeightFn.theta         = helpers::getRawPointer(layer->weights());
+                updateWeightFn.g             = helpers::getRawPointer(this->_curWeightUpdates()[i]);
 
                 thrust::transform(
                     thrust::counting_iterator<int>(0),
@@ -231,35 +277,77 @@ namespace optimizers {
                     );
             }
         }
+        m_beta1t *= m_beta1;
+        m_beta2t *= m_beta2;
     }
 
 
     template <typename TDevice>
-    lmSteepestDescentOptimizer<TDevice>::lmSteepestDescentOptimizer(
+    Adam<TDevice>::Adam(
         NeuralNetwork<TDevice> &neuralNetwork, data_sets::Corpus &trainingSet, data_sets::Corpus &validationSet,
         data_sets::Corpus &testSet, int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery,
-        real_t learningRate, real_t momentum, int tmp_show)
+        real_t learningRate, real_t beta1, real_t beta2, real_t eps, int tmp_show)
         : lmOptimizer<TDevice>(neuralNetwork, trainingSet, validationSet, testSet, maxEpochs, maxEpochsNoBest, validateEvery, testEvery, tmp_show)
         , m_learningRate    (learningRate)
         , m_learningRateFirst(learningRate)
-        , m_momentum        (momentum)
+        , m_beta1        (beta1)
+        , m_beta2        (beta2)
+        , m_eps        (eps)
     {
         // intialize the weight deltas vectors with zeros
         // TODO create Deltas for all embedding
         // m_weightDeltas = this->_curWeightUpdates();
-        m_weightDeltas.resize(this->_curWeightUpdates().size());
+        // m_weightDeltas.resize(this->_curWeightUpdates().size());
+        size_t weightsize = 0;
+        size_t wordnum = 0;
+        size_t lookupsize = 0;
+        m_MStart = std::vector<size_t>(this->_layersize(), 0);
+
+        for (size_t i = 0; i < this->_layersize(); ++i){
+            m_MStart[i] = weightsize;
+            if (i == 1) {
+                layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers()[i].get() );
+                if (!layer) continue;
+                lookupsize = layer->size() * layer->lookupSize();
+                wordnum = layer->lookupSize();
+                continue;
+            }
+          	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(this->_neuralNetwork().layers()[i].get());
+            if (!layer) continue;
+            weightsize += layer->weights().size();
+            // m_weightDeltas[i + N] = this->_curWeightUpdates()[i + N];
+            // thrust::fill(m_weightDeltas[i + N].begin(), m_weightDeltas[i + N].end(), 0);
+        }
+        // allocate momentum arrays
+        m_MLookupStart = weightsize;
+
+        m_momentum_arr.resize(this->_numDevice());
+        m_2momentum_arr.resize(this->_numDevice());
+        m_moment.resize(this->_numDevice());
+        m_second_moment.resize(this->_numDevice());
+
         for (int device = 0; device < this->_numDevice(); ++device){
             cudaSetDevice(device);
             int N = this->_layersize() * device;
-            for (size_t i = 0; i < this->_layersize(); ++i){
-                m_weightDeltas[i + N] = this->_curWeightUpdates()[i + N];
-                thrust::fill(m_weightDeltas[i + N].begin(), m_weightDeltas[i + N].end(), 0);
-            }
+
+            // m_momentum_arr[device] = real_vector(weightsize + lookupsize, 0);
+            m_momentum_arr[device].resize(weightsize + lookupsize);
+            thrust::fill(m_momentum_arr[device].begin(), m_momentum_arr[device].end(), 0);
+            // m_2momentum_arr[device] = real_vector(weightsize + lookupsize, 0);
+            m_2momentum_arr[device].resize(weightsize + lookupsize);
+            thrust::fill(m_2momentum_arr[device].begin(), m_2momentum_arr[device].end(), 0);
+
+            m_moment[device] = helpers::getRawPointer(m_momentum_arr[device]);
+            m_second_moment[device] = helpers::getRawPointer(m_2momentum_arr[device]);
         }
+        m_beta1t = m_beta1;
+        m_beta1t_emb = Cpu::real_vector(wordnum , m_beta1);
+        m_beta2t = m_beta2;
+        m_beta2t_emb = Cpu::real_vector(wordnum , m_beta2);
     }
 
     template <typename TDevice>
-    lmSteepestDescentOptimizer<TDevice>::~lmSteepestDescentOptimizer()
+    Adam<TDevice>::~Adam()
     {
         for ( int device = 0; device < this->_numDevice(); ++device){
             cudaSetDevice(device);
@@ -272,7 +360,7 @@ namespace optimizers {
     }
 
     template <typename TDevice>
-    void lmSteepestDescentOptimizer<TDevice>::exportState(const helpers::JsonDocument &jsonDoc) const
+    void Adam<TDevice>::exportState(const helpers::JsonDocument &jsonDoc) const
     {
         lmOptimizer<TDevice>::exportState(jsonDoc);
 
@@ -280,7 +368,7 @@ namespace optimizers {
     }
 
     template <typename TDevice>
-    void lmSteepestDescentOptimizer<TDevice>::importState(const helpers::JsonDocument &jsonDoc)
+    void Adam<TDevice>::importState(const helpers::JsonDocument &jsonDoc)
     {
         lmOptimizer<TDevice>::importState(jsonDoc);
 
@@ -288,14 +376,14 @@ namespace optimizers {
     }
 
     template <typename TDevice>
-    void lmSteepestDescentOptimizer<TDevice>::setLearningRateFirst(real_t learningRateFirst)
+    void Adam<TDevice>::setLearningRateFirst(real_t learningRateFirst)
     {
         m_learningRateFirst = learningRateFirst;
     }
 
 
     // explicit template instantiations
-    template class lmSteepestDescentOptimizer<Cpu>;
-    template class lmSteepestDescentOptimizer<Gpu>;
+    template class Adam<Cpu>;
+    template class Adam<Gpu>;
 
 } // namespace optimizers

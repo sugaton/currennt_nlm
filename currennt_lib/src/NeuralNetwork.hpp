@@ -23,6 +23,7 @@
 #ifndef NEURALNETWORK_HPP
 #define NEURALNETWORK_HPP
 
+#include "Types.hpp"
 #include "layers/InputLayer.hpp"
 #include "rnnlm/intInputLayer.hpp"
 #include "layers/TrainableLayer.hpp"
@@ -48,6 +49,7 @@
 template <typename TDevice>
 class NeuralNetwork
 {
+    typedef typename TDevice::real_vector real_vector;
 private:
     std::vector< std::vector<boost::shared_ptr<layers::Layer<TDevice> > > > m_layers;
 
@@ -156,11 +158,13 @@ public:
      * @return Outputs of the processed fraction
      */
     std::vector<std::vector<std::vector<real_t> > > getOutputs(const int device = 0);
+    real_vector& last_layer();
 
     /**
      * Returns the number of using gpu device.
      */
     int getNumDevice();
+    void fixLookup();
 };
 
 

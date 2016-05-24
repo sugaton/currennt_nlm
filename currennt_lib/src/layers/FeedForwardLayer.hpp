@@ -46,7 +46,7 @@ namespace layers {
          * @param precedingLayer The layer preceding this one
          */
         FeedForwardLayer(
-            const helpers::JsonValue &layerChild, 
+            const helpers::JsonValue &layerChild,
             const helpers::JsonValue &weightsSection,
             Layer<TDevice>           &precedingLayer
             );
@@ -70,6 +70,7 @@ namespace layers {
          * @see Layer::computeBackwardPass()
          */
         virtual void computeBackwardPass();
+
     };
 
 } // namespace layers

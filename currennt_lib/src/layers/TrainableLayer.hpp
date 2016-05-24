@@ -153,6 +153,8 @@ namespace layers {
          * @see Layer::exportLayer()
          */
         virtual void exportLayer(const helpers::JsonValue &layersArray, const helpers::JsonAllocator &allocator) const;
+
+        real_vector& getInput();
     };
 
 } // namespace layers

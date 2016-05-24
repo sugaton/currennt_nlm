@@ -23,6 +23,7 @@ namespace layers {
     private:
         Layer<TDevice> &m_precedingLayer;
         int m_wsize;
+        bool m_fixed;
 
         // need?
         // const int    m_inputWeightsPerBlock;
@@ -62,6 +63,7 @@ namespace layers {
         real_t learningRate() const;
         const real_vector& weightUpdates() const;
         real_vector& _weightUpdates();
+        size_t lookupSize() const;
 
         /**
          * this method loads word and its embeddings from word2vec-style txtfile
@@ -100,6 +102,9 @@ namespace layers {
         real_vector* embeddings(const int w, const int i);
 
         helpers::Embedding<TDevice>* get_emb(const int w);
+
+        void fixEmb();
+        bool fixed() const;
 
         // void clear_tmpvecs();
     private:
