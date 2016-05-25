@@ -35,7 +35,7 @@ namespace helpers{
         typedef typename TDevice::real_vector real_vector;
     public:
         Embedding(Cpu::real_vector* vec, std::string tname);
-
+        ~Embedding();
         /*
          * if this embedding stored in other device (i.e. we use Gpu but it's stored in cpu), it need to be copied to data, than call get_data(real_vector data)
          */

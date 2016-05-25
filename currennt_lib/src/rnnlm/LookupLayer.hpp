@@ -23,7 +23,10 @@ namespace layers {
     private:
         Layer<TDevice> &m_precedingLayer;
         int m_wsize;
+        int m_maximum_gpusize;
+        int m_UNKid;
         bool m_fixed;
+        bool m_allowCpuEmb;
 
         // need?
         // const int    m_inputWeightsPerBlock;

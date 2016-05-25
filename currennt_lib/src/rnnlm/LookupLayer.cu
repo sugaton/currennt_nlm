@@ -120,12 +120,13 @@ namespace layers {
         , m_bias                   (layerChild->HasMember("bias") ? static_cast<real_t>((*layerChild)["bias"].GetDouble()) : 0)
         , m_learningRate           (layerChild->HasMember("learningRate") ? static_cast<real_t>((*layerChild)["learningRate"].GetDouble()) : -1)
         , m_fixed                  (false)
+        , m_allowCpuEmb            (false)
     {
 
         Cpu::real_vector weights;
         // m_wdict = std::map<std::string, int>();
 
-        int maximum_gpusize = (layerChild->HasMember("max_gpusize"))? static_cast<int>((*layerChild)["max_gpusize"].GetInt()) : INT_MAX;
+        m_maximum_gpusize = (layerChild->HasMember("max_gpusize"))? static_cast<int>((*layerChild)["max_gpusize"].GetInt()) : INT_MAX;
 
         // for random initialization
         const Configuration &config = Configuration::instance();
@@ -171,7 +172,7 @@ namespace layers {
                 }
                 if(weights.size() != this->size())
                     throw std::runtime_error("the dimension of loaded embedding does not match this layer's embeddings-size.");
-                _AddEmbedding(weights, c, maximum_gpusize);
+                _AddEmbedding(weights, c, m_maximum_gpusize);
                 weights.clear();
                 ++c;
             }
@@ -179,7 +180,7 @@ namespace layers {
                 while( c != m_wsize ){
                     for (size_t i = 0; i < this->size(); ++i)
                         weights.push_back( dist(*gen) );
-                    _AddEmbedding(weights, c, maximum_gpusize);
+                    _AddEmbedding(weights, c, m_maximum_gpusize);
                     weights.clear();
                     ++c;
                 }
@@ -200,7 +201,7 @@ namespace layers {
                 for (int c = 0; c < m_wsize; ++c){
                     for (size_t i = 0; i < this->size(); ++i)
                         weights[i] = dist(*gen);
-                    _AddEmbedding(weights, c, maximum_gpusize);
+                    _AddEmbedding(weights, c, m_maximum_gpusize);
                 }
 
             }
@@ -235,6 +236,7 @@ namespace layers {
             std::unique_ptr<real_vector> p_vec = std::unique_ptr<real_vector>(new real_vector(this->size()));
             m_device_vectors.push_back(std::move(p_vec));
         }
+        m_UNKid = m_wdict["<UNK>"];
 
     }
 
@@ -397,7 +399,7 @@ namespace layers {
             int i = 0;
             intInputLayer<TDevice>* layer =  dynamic_cast<intInputLayer<TDevice>*>(&(this->precedingLayer()));
             if (!layer)  // TODO throw runtime error
-              throw std::runtime_error("the input of LookupLayer should be int. (use intInputLayer)");
+                throw std::runtime_error("the input of LookupLayer should be int. (use intInputLayer)");
             for (int w: layer->intoutputs()){
                 // need condition ?
                 real_vector* emb = this->embeddings(w, i);  // maybe &this->embeddings(w) returns cpu::real_vector while emb is gpu::real_vector
@@ -483,7 +485,12 @@ namespace layers {
         if ( w > (int)(m_embeddings.size()) )
             throw std::runtime_error("Unknown word appeared not as UNK");
         // printf("word: %d\n", m_embeddings.size(), w);
-        helpers::Embedding<TDevice>* emb = m_embeddings.at(w).get();
+
+        helpers::Embedding<TDevice>* emb;
+        if (m_allowCpuEmb || w <= m_maximum_gpusize)
+            emb = m_embeddings.at(w).get();
+        else
+            emb = m_embeddings.at(m_UNKid).get();
         if ( emb->type() == typeid(TDevice).name() )
             return emb->get_data();
         // else

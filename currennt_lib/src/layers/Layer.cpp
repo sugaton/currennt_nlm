@@ -56,14 +56,16 @@ namespace layers {
         if (!layerChild->HasMember("size"))
             throw std::runtime_error(std::string("Missing value 'size' in layer '") + m_name + "'");
 
-        // allocate space for the vectors
+        // allocate space for the vectors by copying
         if (createOutputs)
             m_outputs = Cpu::real_vector(m_parallelSequences * m_maxSeqLength * m_size);
 
         m_patTypes = Cpu::pattype_vector(m_parallelSequences * m_maxSeqLength);
+        // m_patTypes = pattype_vector(m_parallelSequences * m_maxSeqLength);
 
         // resize the output errors vector
         m_outputErrors = Cpu::real_vector(this->_outputs().size(), (real_t)0);
+        // m_outputErrors = real_vector(this->_outputs().size(), (real_t)0);
     }
 
     template <typename TDevice>

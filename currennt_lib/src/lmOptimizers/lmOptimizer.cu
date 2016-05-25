@@ -77,13 +77,17 @@ namespace optimizers {
 
         int loop_count = 0;
         while (true) {
+
             int status = internal::getMultiFraction(ds, m_numDevice, &fracs);
             if (status == 2) break;
             // compute forward pass and calculate the error
+
             for (int i = 0; i < m_numDevice; ++i)
                 m_neuralNetwork.loadSequences(*(fracs[i]), i);
+
             consume_sequences += m_numDevice;
             m_neuralNetwork.computeForwardPass();
+
             if (!m_errorType) // log_prob
                 for (int device = 0; device < m_numDevice; ++device)
                     error += m_neuralNetwork.calculateError(device);
@@ -100,6 +104,7 @@ namespace optimizers {
                     *classError -= (real_t)static_cast<layers::MulticlassClassificationLayer<TDevice>&>(m_neuralNetwork.postOutputLayer(device)).countCorrectClassifications();
                 }
 
+
             if (calcWeightUpdates) {
                 // weight noise:
                 std::vector<Cpu::real_vector> origWeights(m_neuralNetwork.layers().size());
@@ -115,6 +120,8 @@ namespace optimizers {
                 // compute the backward pass and accumulate the weight updates
                 m_neuralNetwork.computeBackwardPass();
 
+
+
                 // case lookup-layer (i = 1)
                 {
                     for (int device = 0; device < m_numDevice; ++device){
@@ -128,6 +135,7 @@ namespace optimizers {
                         	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin());
                     }
                 }
+
 
                 for (size_t i = 2; i < m_neuralNetwork.layers().size()-1; ++i) {
                     for (int device = 0; device < m_numDevice; ++device){
@@ -152,21 +160,23 @@ namespace optimizers {
                     else                  _updateWeightsMultiGpu();
                 }
             }
+
             firstFraction = false;
             if (status == 1) break;
             ++loop_count;
             if(m_tmp_show > 0 && loop_count % m_tmp_show ==0)
                 internal::showProgress(m_curEpoch, error / consume_sequences, (float)consume_sequences / (float)ds.totalSequences());
-	    time_point now =  std::chrono::system_clock::now();
+            time_point now =  std::chrono::system_clock::now();
 
-	    auto spend_time = now - m_start_time;
-	    auto hour = std::chrono::duration_cast<std::chrono::hours>(spend_time).count();
-	    if(hour >= m_limit_hour){
-		if(m_tmp_show > 0)
-		    printf("\n");
-		m_finished = true;
-		break;
-	    }
+            auto spend_time = now - m_start_time;
+            auto hour = std::chrono::duration_cast<std::chrono::hours>(spend_time).count();
+            if(hour >= m_limit_hour){
+                if(m_tmp_show > 0)
+                    printf("\n");
+                m_finished = true;
+                break;
+            }
+
         }
 
         // update weights for batch learning

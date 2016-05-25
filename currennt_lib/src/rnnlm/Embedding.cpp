@@ -42,6 +42,10 @@ namespace helpers{
             m_gemb = nullptr;
         }
     }
+    template <typename TDevice>
+    Embedding<TDevice>::~Embedding() {
+        // printf("the memory of embedding has released\n");
+    }
 
 
     template<typename TDevice>

@@ -176,7 +176,7 @@ namespace {
             int valIdx = outputIdx % layerSize;
             int offset = patIdx * effLayerSize + valIdx;
             //            (patIdx + 2) * effLayerSize + (valIdx - effLayerSize)
-            int offset2 = (patIdx + 1) * effLayerSize + valIdx;
+            int offset2 = (patIdx + 2) * effLayerSize + valIdx;
 
             // store the value
             if (valIdx < effLayerSize)
@@ -232,7 +232,7 @@ namespace {
             int patIdx = outputIdx / layerSize;
             int valIdx = outputIdx % layerSize;
             int offset = patIdx * effLayerSize + valIdx;
-            int offset2 = (patIdx + 1) * effLayerSize + valIdx;
+            int offset2 = (patIdx + 2) * effLayerSize + valIdx;
 
             // store the value
             if (valIdx < effLayerSize)
