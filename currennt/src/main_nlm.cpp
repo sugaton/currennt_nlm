@@ -36,6 +36,7 @@
 #include "../../currennt_lib/src/rnnlm/intInputLayer.hpp"
 #include "../../currennt_lib/src/rnnlm/LookupLayer.hpp"
 #include "../../currennt_lib/src/lmOptimizers/lmSteepestDescentOptimizer.hpp"
+#include "../../currennt_lib/src/lmOptimizers/Adam.hpp"
 // #include "../../currennt_lib/src/optimizers/SteepestDescentOptimizer.hpp"
 
 #include "../../currennt_lib/src/helpers/JsonClasses.hpp"
@@ -59,6 +60,7 @@
 #include <stdarg.h>
 #include <sstream>
 #include <cstdlib>
+#include <math.h>
 #include <iomanip>
 
 
@@ -185,6 +187,8 @@ int trainerMain(const Configuration &config)
         neuralNetwork.setWordDict(&_wordDict);
         if (config.pretrainedEmbeddings() != "")
             neuralNetwork.loadEmbeddings(config.pretrainedEmbeddings());
+        if (config.fixedLookup())
+            neuralNetwork.fixLookup();
 
         if (!trainingSet->empty() && trainingSet->outputPatternSize() != neuralNetwork.postOutputLayer().size())
             throw std::runtime_error("Post output layer size != target pattern size of the training set");
@@ -212,9 +216,11 @@ int trainerMain(const Configuration &config)
             printf("Creating the optimizer... ");
             fflush(stdout);
             boost::scoped_ptr<optimizers::lmOptimizer<TDevice> > optimizer;
-            optimizers::lmSteepestDescentOptimizer<TDevice> *sdo;
+
+            // /*
             switch (config.optimizer()) {
             case Configuration::OPTIMIZER_STEEPESTDESCENT:
+                optimizers::lmSteepestDescentOptimizer<TDevice> *sdo;
                 sdo = new optimizers::lmSteepestDescentOptimizer<TDevice>(
                     neuralNetwork, *trainingSet, *validationSet, *testSet,
                     config.maxEpochs(), config.maxEpochsNoBest(), config.validateEvery(), config.testEvery(),
@@ -223,9 +229,20 @@ int trainerMain(const Configuration &config)
                 optimizer.reset(sdo);
                 break;
 
+            case Configuration::OPTIMIZER_ADAM:
+                optimizers::Adam<TDevice> *adm;
+                adm = new optimizers::Adam<TDevice>(
+                        neuralNetwork, *trainingSet, *validationSet, *testSet,
+                        config.maxEpochs(), config.maxEpochsNoBest(), config.validateEvery(), config.testEvery(),
+                        config.learningRate()
+                        );
+                optimizer.reset(adm);
+                break;
+
             default:
                 throw std::runtime_error("Unknown optimizer type");
             }
+            // */
 
             printf("done.\n");
             printOptimizer(config, *optimizer);
@@ -299,10 +316,11 @@ int trainerMain(const Configuration &config)
                             }
                             else{
                                 saveFileS << config.autosavePrefix();
-			    }
+            			    }
                             saveFileS << ".best.jsn";
                             saveNetwork(neuralNetwork, saveFileS.str());
                         }
+                        infoRows += printfRow(" yes \n");
                     }
                     else
                         infoRows += printfRow("  no    \n");
