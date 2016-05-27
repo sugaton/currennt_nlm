@@ -150,6 +150,16 @@ namespace layers {
         void exportWeights(const helpers::JsonValue &weightsObject, const helpers::JsonAllocator &allocator) const;
 
         /**
+         * Stores the weights of the layer in a binary file.
+         *
+         * @param dirname    The name of directory containe the weight files
+         * filename will be "dirname/this->name()"
+         */
+        void exportWeightsBinary(const std::string &dirname) const;
+
+        void importWeightsBinary(const std::string &dirname);
+
+        /**
          * @see Layer::exportLayer()
          */
         virtual void exportLayer(const helpers::JsonValue &layersArray, const helpers::JsonAllocator &allocator) const;

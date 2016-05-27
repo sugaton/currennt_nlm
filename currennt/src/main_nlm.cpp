@@ -54,6 +54,10 @@
 #include <boost/thread.hpp>
 #include <boost/algorithm/string/replace.hpp>
 
+#include <cereal/types/unordered_map.hpp>
+#include <cereal/types/string.hpp>
+#include <cereal/archives/binary.hpp>
+
 #include <fstream>
 #include <stdexcept>
 #include <algorithm>
@@ -106,7 +110,8 @@ void createModifiedTrainingSet(data_sets::Corpus *trainingSet, int parallelSeque
 template <typename TDevice> void saveState(const NeuralNetwork<TDevice> &nn, const optimizers::lmOptimizer<TDevice> &optimizer, const std::string &infoRows);
 template <typename TDevice> void restoreState(NeuralNetwork<TDevice> *nn, optimizers::lmOptimizer<TDevice> *optimizer, std::string *infoRows);
 std::string printfRow(const char *format, ...);
-
+void exportDictBinary(const std::unordered_map<std::string, int> &m, std::string &fname);
+void importDictBinary(std::unordered_map<std::string, int> &m, std::string &fname);
 
 // main function
 template <typename TDevice>
@@ -119,11 +124,18 @@ int trainerMain(const Configuration &config)
         printf("Reading network from '%s'... ", networkFile.c_str());
         fflush(stdout);
         rapidjson::Document netDoc;
+        std::string importdir = config.importDir();
+        std::string savedir = config.exportDir();
         readJsonFile(&netDoc, networkFile);
         printf("done.\n");
         printf("\n");
         std::unordered_map<std::string, int> _wordDict;
-        loadDict(&netDoc, &_wordDict);
+        if (importdir != "") {
+            std::string fname = importdir + "/wdict.cereal";
+            importDictBinary(_wordDict, fname);
+        }
+
+        // loadDict(&netDoc, &_wordDict);
 
         // load data sets
         boost::shared_ptr<data_sets::Corpus> trainingSet    = boost::make_shared<data_sets::Corpus>();
@@ -185,6 +197,8 @@ int trainerMain(const Configuration &config)
 
         NeuralNetwork<TDevice> neuralNetwork(netDoc, parallelSequences, maxSeqLength, inputSize, outputSize, vocab_size, config.devices());
         neuralNetwork.setWordDict(&_wordDict);
+        if (importdir != "")
+            neuralNetwork.importWeightsBinary(importdir);
         if (config.pretrainedEmbeddings() != "")
             neuralNetwork.loadEmbeddings(config.pretrainedEmbeddings());
         if (config.fixedLookup())
@@ -318,7 +332,8 @@ int trainerMain(const Configuration &config)
                                 saveFileS << config.autosavePrefix();
             			    }
                             saveFileS << ".best.jsn";
-                            saveNetwork(neuralNetwork, saveFileS.str());
+                            //saveNetwork(neuralNetwork, saveFileS.str());
+                            neuralNetwork.exportWeightsBinary(savedir);
                         }
                         infoRows += printfRow(" yes \n");
                     }
@@ -347,8 +362,12 @@ int trainerMain(const Configuration &config)
             printf("\n");
 
             // save the trained network to the output file
-            printf("Storing the trained network in '%s'... ", config.trainedNetworkFile().c_str());
-            saveNetwork(neuralNetwork, config.trainedNetworkFile());
+            // printf("Storing the trained network in '%s'... ", config.trainedNetworkFile().c_str());
+            printf("Storing the trained network in '%s'... ", savedir.c_str());
+            // saveNetwork(neuralNetwork, config.trainedNetworkFile());
+            neuralNetwork.exportWeightsBinary(savedir);
+            std::string ofname = savedir + "/wdict.cereal";
+            exportDictBinary(_wordDict, ofname);
             printf("done.\n");
 
             std::cout << "Removing cache file(s) ..." << std::endl;
@@ -773,7 +792,28 @@ void saveNetwork(const NeuralNetwork<TDevice> &nn, const std::string &filename)
 
     fclose(file);
 }
+/*
+template <typename TDevice>
+void saveNetworkBinary(const NeuralNetwork<TDevice> &nn, const std::string &dirname, const std::string &filename)
+{
+    nn.exportWeightsBinary(dirname);
 
+}
+*/
+
+void exportDictBinary(const std::unordered_map<std::string, int> &m, std::string &fname)
+{
+    std::ofstream ofs(fname, std::ios::binary);
+    cereal::BinaryOutputArchive archive(ofs);
+    archive(m);
+}
+
+void importDictBinary(std::unordered_map<std::string, int> &m, std::string &fname)
+{
+    std::ifstream ifs(fname, std::ios::binary);
+    cereal::BinaryInputArchive archive(ifs);
+    archive(m);
+}
 
 template <typename TDevice>
 void saveState(const NeuralNetwork<TDevice> &nn, const optimizers::lmOptimizer<TDevice> &optimizer, const std::string &infoRows)

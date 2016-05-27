@@ -29,6 +29,7 @@
 #include "../Configuration.hpp"
 
 #include <stdexcept>
+#include <fstream>
 
 #include <boost/random/normal_distribution.hpp>
 #include <boost/random/uniform_real_distribution.hpp>
@@ -247,6 +248,39 @@ namespace layers {
 
         // add the weights section tot he weights object
         weightsObject->AddMember(this->name().c_str(), weightsSection, allocator);
+    }
+
+    template <typename TDevice>
+    void TrainableLayer<TDevice>::exportWeightsBinary(const std::string &dirname) const
+    {
+        std::string filename = dirname + "/" + this->name();
+        std::ofstream ofs(filename, std::ios_base::binary);
+        // ofs << m_weights.size();
+        size_t size = m_weights.size();
+        real_t item;
+        ofs.write((const char*) &size, sizeof(size_t));
+        for (size_t i = 0; i < m_weights.size(); ++i) {
+            item = m_weights[i];
+            ofs.write((const char*) &item, sizeof(real_t));
+            // ofs << m_weights[i];
+        }
+    }
+
+    template <typename TDevice>
+    void TrainableLayer<TDevice>::importWeightsBinary(const std::string &dirname)
+    {
+        std::string filename = dirname + "/" + this->name();
+        std::ifstream ifs(filename, std::ios_base::binary);
+        size_t size;
+        real_t item;
+        ifs.read((char*) &size, sizeof(size_t));
+        // ifs >> size;
+        assert( size == m_weights.size() );
+        for (size_t i = 0; i < size; ++i) {
+            // ifs >> item;
+            ifs.read((char*) &item, sizeof(real_t));
+            m_weights[i] = item;
+        }
     }
 
     template <typename TDevice>

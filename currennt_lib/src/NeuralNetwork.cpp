@@ -290,6 +290,7 @@ void NeuralNetwork<TDevice>::exportLayers(const helpers::JsonDocument& jsonDoc) 
         lookup->exportDict(jsonDoc, &jsonDoc->GetAllocator());
 }
 
+
 template <typename TDevice>
 void NeuralNetwork<TDevice>::exportWeights(const helpers::JsonDocument& jsonDoc) const
 {
@@ -318,6 +319,45 @@ void NeuralNetwork<TDevice>::exportWeights(const helpers::JsonDocument& jsonDoc)
 
     // add the section to the JSON document
     jsonDoc->AddMember("weights", weightsObject, jsonDoc->GetAllocator());
+}
+
+template <typename TDevice>
+void NeuralNetwork<TDevice>::exportWeightsBinary(const std::string &dirname) const
+{
+    cudaSetDevice(0);
+
+    // create the weight objects
+    BOOST_FOREACH (const boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers[0]) {
+    	layers::TrainableLayer<TDevice> *trainableLayer = dynamic_cast<layers::TrainableLayer<TDevice>*>(layer.get());
+        if (trainableLayer)
+            trainableLayer->exportWeightsBinary(dirname);
+        else{
+        	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(layer.get());
+            if (lookup)
+                lookup->exportWeightsBinary(dirname);
+        }
+    }
+}
+
+template <typename TDevice>
+void NeuralNetwork<TDevice>::importWeightsBinary(const std::string &dirname)
+{
+    // cudaSetDevice(0);
+
+    // create the weight objects
+    for (size_t device = 0; device < m_layers.size(); ++device){
+        cudaSetDevice(device);
+        BOOST_FOREACH (const boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers[device]) {
+        	layers::TrainableLayer<TDevice> *trainableLayer = dynamic_cast<layers::TrainableLayer<TDevice>*>(layer.get());
+            if (trainableLayer)
+                trainableLayer->importWeightsBinary(dirname);
+            else{
+            	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(layer.get());
+                if (lookup)
+                    lookup->importWeightsBinary(dirname);
+            }
+        }
+    }
 }
 
 template <typename TDevice>

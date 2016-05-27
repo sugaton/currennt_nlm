@@ -184,8 +184,10 @@ Configuration::Configuration(int argc, const char *argv[])
         ("output_time_lag",   po::value(&m_outputTimeLag)->default_value(0),              "sets the time lag in the training targets (0 = predict current frame, 1 = predict previous frame, etc.)")
         ("cache_path",        po::value(&m_cachePath)         ->default_value(""),        "sets the cache path where the .nc data is cached for random access")
         ("pretrainedEmbeddings",po::value(&m_embeddingFile)         ->default_value(""),        "sets the word2vec-style embeddings file (.txt)")
-        ("lexemeEmbeddings",po::value(&m_lexemeFile)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
-        ("wsdResult",po::value(&m_wsdResult)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
+        ("lexemeEmbeddings",  po::value(&m_lexemeFile)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
+        ("wsdResult",         po::value(&m_wsdResult)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
+        ("importDir",         po::value(&m_importDir)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
+        ("exportDir",         po::value(&m_exportDir)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
         ;
 
     po::options_description weightsInitializationOptions("Weight initialization options");
@@ -656,4 +658,14 @@ bool Configuration::revertStd() const
 bool Configuration::fixedLookup() const
 {
     return m_fixlookup;
+}
+
+std::string Configuration::importDir() const
+{
+    return m_importDir;
+}
+
+std::string Configuration::exportDir() const
+{
+    return m_exportDir;
 }

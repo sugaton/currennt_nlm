@@ -102,6 +102,10 @@ namespace layers {
          */
         void exportDict(const helpers::JsonDocument &Object, const helpers::JsonAllocator &allocator) const;
 
+        void exportWeightsBinary(const std::string &dirname) const;
+
+        void importWeightsBinary(const std::string &dirname);
+
         real_vector* embeddings(const int w, const int i);
 
         helpers::Embedding<TDevice>* get_emb(const int w);

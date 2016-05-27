@@ -111,6 +111,8 @@ private:
     std::string m_embeddingFile;
     std::string m_lexemeFile;
     std::string m_wsdResult;
+    std::string m_importDir;
+    std::string m_exportDir;
 
     std::vector<std::string> m_trainingFiles;
     std::vector<std::string> m_validationFiles;
@@ -485,6 +487,8 @@ public:
     const std::string& pretrainedEmbeddings() const;
     const std::string& lexeme_file() const;
     const std::string& wsdResult() const;
+    std::string importDir() const;
+    std::string exportDir() const;
     bool fixedLookup() const;
 };
 

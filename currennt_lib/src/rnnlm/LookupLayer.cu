@@ -458,6 +458,67 @@ namespace layers {
     }
 
     template <typename TDevice>
+    void LookupLayer<TDevice>::exportWeightsBinary(const std::string &dirname) const
+    {
+        std::string filename = dirname + "/" + this->name();
+        std::ofstream ofs(filename, std::ios_base::binary);
+
+        // ofs << m_embeddings.size();
+        size_t size = m_embeddings.size();
+        ofs.write((const char*) &size, sizeof(size_t));
+        // ofs << this->size();
+        int d = this->size();
+        ofs.write((const char*) &d, sizeof(int));
+        real_t item;
+        Cpu::real_vector v = Cpu::real_vector();
+        v.resize(this->size());
+        // for (auto emb : m_embeddings) { //it cannot do this, we should access m_embeddings[i] directory
+        for (size_t j = 0; j < m_embeddings.size(); ++j) {
+            thrust::copy(
+                m_embeddings.at(j)->get_data()->begin(),
+                m_embeddings.at(j)->get_data()->end(),
+                v.begin()
+            );
+            for (int i = 0; i < this->size(); ++i) {
+                item = v[i];
+                ofs.write((const char*) &item, sizeof(real_t));
+
+            }
+                // ofs << v[i];
+        }
+    }
+
+    template <typename TDevice>
+    void LookupLayer<TDevice>::importWeightsBinary(const std::string &dirname)
+    {
+        std::string filename = dirname + "/" + this->name();
+        std::ifstream ifs(filename, std::ios_base::binary);
+
+        size_t N;
+        int d;
+        ifs.read((char*) &N, sizeof(size_t));
+        // ifs >> N;
+        ifs.read((char*) &d, sizeof(int));
+        // ifs >> d;
+
+        assert( N == m_embeddings.size() && d == this->size() );
+        Cpu::real_vector vh = Cpu::real_vector();
+        real_vector vd = real_vector();
+        real_t item;
+        vh.resize(d);
+        vd.resize(d);
+        for (size_t j = 0; j < N; ++j) {
+            for (int i = 0; i < this->size(); ++i) {
+                ifs.read((char*) &item, sizeof(real_t));
+                vh[i] = item;
+            }
+            thrust::copy(vh.begin(), vh.end(), vd.begin());
+            m_embeddings.at(j)->replace(&vd);
+        }
+
+    }
+
+    template <typename TDevice>
     void LookupLayer<TDevice>::exportDict(const helpers::JsonDocument &Object, const helpers::JsonAllocator &allocator) const
     {
 

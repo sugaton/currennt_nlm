@@ -149,6 +149,8 @@ public:
      */
     void exportWeights(const helpers::JsonDocument& jsonDoc) const;
 
+    void exportWeightsBinary(const std::string &dirname) const;
+    void importWeightsBinary(const std::string &dirname);
     /**
      * Returns the outputs of the processed fraction
      *
