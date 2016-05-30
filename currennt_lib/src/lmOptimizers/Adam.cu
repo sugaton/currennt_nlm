@@ -32,7 +32,9 @@
 
 #include <thrust/transform.h>
 #include <thrust/copy.h>
+#include <thrust/functional.h>
 #include <thrust/iterator/counting_iterator.h>
+#include <thrust/iterator/constant_iterator.h>
 
 
 namespace internal {
@@ -89,6 +91,7 @@ namespace optimizers {
         updateWeightFn.beta2         = m_beta2;
         updateWeightFn.eps           = m_eps;
         updateWeightFn.alpha         = m_learningRate;
+        int parallelSequences = this->_neuralNetwork().postOutputLayer().parallelSequences();
 
         for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
             if (i == 1){
@@ -130,6 +133,12 @@ namespace optimizers {
             if (!layer)
                 continue;
 
+
+            thrust::transform(this->_curWeightUpdates()[i].begin(),
+                              this->_curWeightUpdates()[i].end(),
+                              thrust::constant_iterator<real_t>((real_t)(parallelSequences)),
+                              this->_curWeightUpdates()[i].begin(),
+                              thrust::divides<real_t>());
             //std::cout << "layer " << layer->name() << ": learning rate " << updateWeightFn.learningRate << std::endl;
 
             updateWeightFn.beta1t        = m_beta1t;
@@ -156,11 +165,14 @@ namespace optimizers {
     template <typename TDevice>
     void Adam<TDevice>::_SumUpdates(std::map<int, int> &emb_posi){
 
+        int parallelSequences = this->_neuralNetwork().postOutputLayer().parallelSequences();
+
         for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
               thrust::fill(this->_UpdateSums()[i].begin(), this->_UpdateSums()[i].end(), 0.0);
         }
         int next_posi = 0;
         int d;
+        bool lookupFixed = false;
         thrust::plus<real_t> pls;
         for (int device = 0; device < this->_numDevice(); ++device){
             cudaSetDevice(device);
@@ -175,15 +187,16 @@ namespace optimizers {
             }
             //  for lookup
             layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers(device)[1].get() );
-            if (layer->fixed())
-                return;
+            if (layer->fixed()){
+                lookupFixed = true;
+                continue;
+            }
             thrust::copy(this->_curWeightUpdates()[1 + N].begin(), this->_curWeightUpdates()[1 + N].end(), this->_allWeightUpdates()[1].begin());
             d = layer->size();
             for (int i = 0; i < layer->precedingLayer().intoutputs().size(); ++i){
                 int w = layer->precedingLayer().intoutputs()[i];
                 if (emb_posi.find(w) == emb_posi.end())
                     emb_posi[w] = next_posi++;
-                // printf("accessed %d / %d\n", emb_posi[w] * d, d);
                 // host
                 thrust::transform(this->_UpdateSums()[1].begin() + emb_posi[w] * d,
                                   this->_UpdateSums()[1].begin() + (emb_posi[w] + 1) * d,
@@ -198,11 +211,23 @@ namespace optimizers {
             for (int device = 0; device < this->_numDevice(); ++device){
                 cudaSetDevice(device);
                 int N = this->_layersize() * device;
+                //average weights
                 thrust::copy(this->_UpdateSums()[i].begin(),
                              this->_UpdateSums()[i].end(),
                              this->_curWeightUpdates()[i + N].begin());
+                            //  /*
+                thrust::transform(
+                    this->_curWeightUpdates()[i + N].begin(),
+                    this->_curWeightUpdates()[i + N].end(),
+                    thrust::constant_iterator<real_t>((real_t)(parallelSequences * this->_numDevice())),
+                    this->_curWeightUpdates()[i + N].begin(),
+                    thrust::divides<real_t>()
+                );
+                    // */
             }
         }
+        if (lookupFixed)
+            return;
         int p;
         for (int device = 0; device < this->_numDevice(); ++device){
             cudaSetDevice(device);

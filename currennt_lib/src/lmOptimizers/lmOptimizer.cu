@@ -34,6 +34,13 @@
 
 #include <thrust/transform.h>
 
+
+#ifdef MPI
+
+#include <mpi.h>
+
+#endif
+
 namespace internal{
 
     // return status, 0: successed 1:partially failed　2: completely failed
@@ -58,22 +65,105 @@ namespace internal{
         fflush(stdout);
     }
     void refreshLine(int curEpoch){ printf("\r %5d | ", curEpoch); }
+
+    template <typename T>
+    struct _uDivide
+    {
+        T x;
+        __host__ __device__ real_t operator() (const T& y)
+        {
+            return y / x;
+        }
+    };
 }
 
 namespace optimizers {
 
+#ifdef MPI
+    template <typename TDevice>
+    void lmOptimizer<TDevice>::_syncWeight()
+    {
+        // copying to host vector
+        std::set<int> syncSet;
+        cudaSetDevice(0);
+        for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
+            if (i == 1) {
+              	layers::LookupLayer<TDevice> *_layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
+                if (_layer->fixed())
+                    continue;
+                //hoge hoge
+                continue;
+            }
+          	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
+            if (!layer)
+                continue;
+            syncSet.insert(i);
+            // copying
+            thrust::copy(
+                layer->weights().begin(),
+                layer->weights().end(),
+                m_allWeightUpdates[i].begin()
+            );
+        }
+
+        // do all_reduce and calculate mean of weight.
+        // result is stored in m_UpdateSums
+        internal::_uDivide<real_t> devide_by_procs;
+        devide_by_procs.x = (real_t)MPI::COMM_WORLD.Get_size();
+        for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
+            if (syncSet.find(i) == syncSet.end())
+                continue;
+            real_t* arr = thrust::raw_pointer_cast(m_allWeightUpdates[i].data());
+            real_t* result = thrust::raw_pointer_cast(m_UpdateSums[i].data());
+            // sum
+            MPI::COMM_WORLD.Allreduce(
+                (void*) arr,     // sendbuf
+                (void*) result,  // recvbuf
+                (int) m_allWeightUpdates[i].size(),
+                MPI_FLOAT,
+                MPI_SUM //,
+                // MPI_COMM_WORLD
+            );
+            // calc mean of weight
+            thrust::transform(
+                m_UpdateSums[i].begin(),
+                m_UpdateSums[i].end(),
+                m_UpdateSums[i].begin(),
+                devide_by_procs
+            );
+        }
+
+        // copying result to device vector
+        for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
+            if (syncSet.find(i) == syncSet.end())
+                continue;
+            for (int device = 0; device < m_numDevice; ++device) {
+                cudaSetDevice(device);
+              	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
+                if(!layer)
+                    continue
+                thrust:copy(
+                    m_UpdateSums[i].begin()
+                    m_UpdateSums[i].end()
+                    layer->weights().begin()
+                );
+            }
+        }
+    }
+#endif
     template <typename TDevice>
     real_t lmOptimizer<TDevice>::_processDataSet(data_sets::Corpus &ds, bool calcWeightUpdates, real_t *classError)
     {
         // process all data set fractions
         real_t error = 0;
-        *classError = (real_t) ds.totalTimesteps();
+        *classErr or = (real_t) ds.totalTimesteps();
 
         int consume_sequences = 0;
 
         std::vector< boost::shared_ptr<data_sets::CorpusFraction> > fracs;
         fracs.resize(m_numDevice);
         bool firstFraction = true;
+        int parallelSequences = m_neuralNetwork.postOutputLayer().parallelSequences();
 
         int loop_count = 0;
         while (true) {
@@ -117,7 +207,7 @@ namespace optimizers {
                         }
                     }
                 }
-                // compute the backward pass and accumulate the weight updates
+                // compute the backward pass and accumulate the weight updates to layer->weightUpdates()
                 m_neuralNetwork.computeBackwardPass();
 
 
@@ -125,6 +215,7 @@ namespace optimizers {
                 // case lookup-layer (i = 1)
                 {
                     for (int device = 0; device < m_numDevice; ++device){
+                        cudaSetDevice(device);
                         int N = device * m_layer_size;
                         layers::LookupLayer<TDevice> *layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers(device)[1].get());
                         if (!layer || layer->fixed())
@@ -133,12 +224,15 @@ namespace optimizers {
                             thrust::transform(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin(), m_curWeightUpdates[N + 1].begin(), thrust::plus<real_t>());
                         else
                         	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin());
+
                     }
+
                 }
 
 
                 for (size_t i = 2; i < m_neuralNetwork.layers().size()-1; ++i) {
                     for (int device = 0; device < m_numDevice; ++device){
+                        cudaSetDevice(device);
                         int N = device * m_layer_size;
                         layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
                         if (!layer)
@@ -152,7 +246,9 @@ namespace optimizers {
                         // restore old weights before update in case of weight noise
                         if (Configuration::instance().weightNoiseSigma() > 0.0)
                             thrust::copy(origWeights[i].begin(), origWeights[i].end(), layer->weights().begin());
+
                     }
+
                 }
                 // update weights for hybrid online/batch learning
                 if (Configuration::instance().hybridOnlineBatch()){
@@ -184,9 +280,12 @@ namespace optimizers {
             if (m_numDevice == 1) _updateWeights();
             else                  _updateWeightsMultiGpu();
         }
+  #ifdef MPI
+        _syncWeight();
+  #endif
 
         // normalize the errors : default
-        if (!m_errorType)
+        if m_errorType)
             error /= ds.totalSequences();
         else  // perplexity
             error = exp(error / ds.totalTimesteps());
@@ -277,11 +376,11 @@ namespace optimizers {
     template <typename TDevice>
     std::vector<Cpu::real_vector>& lmOptimizer<TDevice>::_UpdateSums()
     {
-        return m_UpdateSums;
-    }
+          return m_UpdateSums;
+      }
 
-    template <typename TDevice>
-    std::vector<Cpu::real_vector>& lmOptimizer<TDevice>::_allWeightUpdates()
+      template <typename TDevice>
+      std::vector<Cpu::real_vector>& lmOptimizer<TDevice>::_allWeightUpdates()
     {
         return m_UpdateSums;
     }
