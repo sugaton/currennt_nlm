@@ -32,6 +32,8 @@
 
 #include <thrust/transform.h>
 #include <thrust/copy.h>
+#include <thrust/functional.h>
+#include <thrust/iterator/constant_iterator.h>
 #include <thrust/iterator/counting_iterator.h>
 
 
@@ -71,11 +73,14 @@ namespace optimizers {
     {
         internal::UpdateWeightFn updateWeightFn;
         updateWeightFn.momentum     = m_momentum;
+        int parallelSequences = this->_neuralNetwork().postOutputLayer().parallelSequences();
 
         for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
             if (i == 1){
                 layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers()[i].get() );
                 if (layer->type() != "lookup") continue;
+                if (layer->fixed())
+                    continue;
                 //update embeddings in lookup layer
                 int w;
                 for (int j = 0; j < layer->precedingLayer().intoutputs().size(); ++j){
@@ -103,6 +108,12 @@ namespace optimizers {
             if (!layer)
                 continue;
 
+            thrust::transform(this->_curWeightUpdates()[i].begin(),
+                              this->_curWeightUpdates()[i].end(),
+                              thrust::constant_iterator<real_t>((real_t)(parallelSequences)),
+                              this->_curWeightUpdates()[i].begin(),
+                              thrust::divides<real_t>());
+
             updateWeightFn.learningRate = m_learningRate;
             if (layer->learningRate() >= 0.0)
                 updateWeightFn.learningRate = layer->learningRate();
@@ -127,10 +138,12 @@ namespace optimizers {
     template <typename TDevice>
     void lmSteepestDescentOptimizer<TDevice>::_SumUpdates(std::map<int, int> &emb_posi){
 
+        int parallelSequences = this->_neuralNetwork().postOutputLayer().parallelSequences();
         for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
               thrust::fill(this->_UpdateSums()[i].begin(), this->_UpdateSums()[i].end(), 0.0);
         }
         int next_posi = 0;
+        int d;
         thrust::plus<real_t> pls;
         for (int device = 0; device < this->_numDevice(); ++device){
             cudaSetDevice(device);
@@ -144,9 +157,11 @@ namespace optimizers {
                                   pls);
             }
             //  for lookup
-            thrust::copy(this->_curWeightUpdates()[1 + N].begin(), this->_curWeightUpdates()[1 + N].end(), this->_allWeightUpdates()[1].begin());
             layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers(device)[1].get() );
-            int d = layer->size();
+            d = layer->size();
+            if (layer->fixed())
+                continue;
+            thrust::copy(this->_curWeightUpdates()[1 + N].begin(), this->_curWeightUpdates()[1 + N].end(), this->_allWeightUpdates()[1].begin());
             for (int i = 0; i < layer->precedingLayer().intoutputs().size(); ++i){
                 int w = layer->precedingLayer().intoutputs()[i];
                 if (emb_posi.find(w) == emb_posi.end())
@@ -160,7 +175,40 @@ namespace optimizers {
                                   pls);
             }
         }
-    }
+        cudaDeviceSynchronize();
+        for (size_t i = 2; i < this->_neuralNetwork().layers().size()-1; ++i) {
+            for (int device = 0; device < this->_numDevice(); ++device){
+                cudaSetDevice(device);
+                int N = this->_layersize() * device;
+                //average weights
+                thrust::copy(this->_UpdateSums()[i].begin(),
+                             this->_UpdateSums()[i].end(),
+                             this->_curWeightUpdates()[i + N].begin());
+
+                // /*
+                thrust::transform(
+                    this->_curWeightUpdates()[i + N].begin(),
+                    this->_curWeightUpdates()[i + N].end(),
+                    thrust::constant_iterator<real_t>((real_t)(parallelSequences * this->_numDevice())),
+                    this->_curWeightUpdates()[i + N].begin(),
+                    thrust::divides<real_t>()
+                );
+                          //  */
+            }
+        }
+        int p;
+        for (int device = 0; device < this->_numDevice(); ++device){
+            cudaSetDevice(device);
+            int N = this->_layersize() * device;
+            int j = 0;
+            for (auto w_p = emb_posi.begin(); w_p != emb_posi.end(); ++w_p){
+                p = w_p->second;
+                thrust::copy(this->_UpdateSums()[1].begin() + p * d,
+                             this->_UpdateSums()[1].begin() + (p+1) * d,
+                             this->_curWeightUpdates()[1 + N].begin() + j * d);
+            }
+        }
+  }
 
     template <typename TDevice>
     void lmSteepestDescentOptimizer<TDevice>::_updateWeightsMultiGpu()
@@ -178,6 +226,8 @@ namespace optimizers {
                     layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers(device)[i].get() );
 		    int max_length = layer->parallelSequences() * layer->maxSeqLength();
                     if (layer->type() != "lookup") continue;
+                    if (layer->fixed())
+                        continue;
                     //update embeddings in lookup layer
                     int w, p;
                     int j = 0;
@@ -186,11 +236,11 @@ namespace optimizers {
                         p = w_p->second;
                         real_vector* emb = layer->embeddings(w, j);  // if embeddings(w, i) is on the gpu memory, emb has the direct raw pointer of embeddings
                                                           // if it is on the cpu memory, emb is the temporal device vector(m_device_vectors.at(i)), thus we should feed back to original space by calling Embedding.replace()
-
+                        /*
                         thrust::copy(this->_UpdateSums()[i].begin() + p * layer->size(),
                                     this->_UpdateSums()[i].begin() + (p+1) * layer->size(),
                                     this->_curWeightUpdates()[1 + N].begin() + j * layer->size());
-
+                        */
                         updateWeightFn.weights       = helpers::getRawPointer(*emb);
                         updateWeightFn.weightUpdates = helpers::getRawPointer(this->_curWeightUpdates()[1 + N]) + j * layer->size();
                         updateWeightFn.weightDeltas  = helpers::getRawPointer(m_weightDeltas[1 + N]) + j * layer->size();
@@ -213,7 +263,7 @@ namespace optimizers {
               	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(this->_neuralNetwork().layers(device)[i].get());
                 if (!layer)
                     continue;
-                thrust::copy(this->_UpdateSums()[i].begin(), this->_UpdateSums()[i].end(), this->_curWeightUpdates()[i + N].begin());
+                //thrust::copy(this->_UpdateSums()[i].begin(), this->_UpdateSums()[i].end(), this->_curWeightUpdates()[i + N].begin());
                 updateWeightFn.learningRate = m_learningRate;
                 if (layer->learningRate() >= 0.0)
                     updateWeightFn.learningRate = layer->learningRate();

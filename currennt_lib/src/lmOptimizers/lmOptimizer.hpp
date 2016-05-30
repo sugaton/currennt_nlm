@@ -68,7 +68,7 @@ namespace optimizers {
         int    m_tmp_show;
 	int    m_limit_hour;
 
-	time_point m_start_time; 
+	time_point m_start_time;
         std::vector<real_vector> m_curWeightUpdates;
         std::vector<Cpu::real_vector> m_allWeightUpdates;
         std::vector<Cpu::real_vector> m_UpdateSums;
@@ -78,6 +78,9 @@ namespace optimizers {
         real_t _processDataSet(data_sets::Corpus &ds, bool calcWeightUpdates, real_t *classError);
         void _storeWeights();
         void _restoreWeights();
+#ifdef MPI
+        void _syncWeight();
+#endif
 
     protected:
         static void _exportWeights(const helpers::JsonDocument &jsonDoc, const char *arrayName, const std::vector<real_vector> &weights);
@@ -115,7 +118,7 @@ namespace optimizers {
             int validateEvery,
             int testEvery,
             int temp_show = -1,
-            int limit_hour = 3 
+            int limit_hour = 3
             );
 
         /**
