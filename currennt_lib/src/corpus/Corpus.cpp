@@ -779,7 +779,7 @@ namespace data_sets {
             throw std::runtime_error(std::string("Cannot open temporary file '") + tmpFileName + "'");
 
         // TODO rewrite  no need?
-        /*
+        // /*
         if (!m_fixed_wordDict){
             if (m_wordids.find("<s>") == m_wordids.end())
                 m_wordids["<s>"] = m_nextid++;
@@ -790,13 +790,21 @@ namespace data_sets {
             _makeWordDict(txtfiles);
             m_fixed_wordDict = true;
         }
-        */
+        // */
 
         // pre loading and make binary data of mini-batch
         // TODO: broadcast m_wordids
         if (rank == 0) {
             _writeTemp(inputfn, outputfn, truncSeqLength);
         }
+        // m_wordids is already made
+
+        //broadcast m_wordids
+        bmpi::communicator world;
+        mpiumap<std::string, int> mm(world, m_wordids);
+        mm.mmbroadcast(); // rank-0's map is stored in mm
+        if (rank != 0)
+            mm.getMap(&m_wordids);
 
         int *buf;
         int dataAmount;

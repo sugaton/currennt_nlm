@@ -2,14 +2,14 @@
 #include <boost/mpi/environment.hpp>
 #include <boost/mpi/communicator.hpp>
 #include <iostream>
-#include <map>
+#include <unordered_map>
 #include <list>
-#include "mpimap.hpp"
+#include "mpiumap.hpp"
 
 namespace mpi = boost::mpi;
 
 template <typename T, typename T2>
-mpimap<T, T2>(mpi::communicator& w, const std::map<T, T2>& m){
+mpiumap<T, T2>(mpi::communicator& w, const std::unordered_map<T, T2>& m){
   world = w;
   msize = m.size();
   keys.reserve(msize);
@@ -21,7 +21,7 @@ mpimap<T, T2>(mpi::communicator& w, const std::map<T, T2>& m){
 }
 
 template <typename T, typename T2>
-void mpimap<T,T2>::mmbroadcast(){
+void mpiumap<T,T2>::mmbroadcast(){
   broadcast(world, msize, 0);
   if (world.rank() != 0) {
     keys.resize(msize);
@@ -32,13 +32,13 @@ void mpimap<T,T2>::mmbroadcast(){
 }
 
 template <typename T, typename T2>
-void mpimap<T,T2>::getMap(std::map<T, T2>* m){
+void mpiumap<T,T2>::getMap(std::unordered_map<T, T2>* m){
   for (size_t i = 0; i < msize; i++)
     (*m)[keys.at(i)] = values.at(i);
 }
 
 template <typename T, typename T2>
-void mpimap<T,T2>::showsize() {
+void mpiumap<T,T2>::showsize() {
   std::cout << world.rank() << "'s mapsize:" << msize << std::endl;
   std::cout << "values:" << std::endl;
   for (auto i: values)
