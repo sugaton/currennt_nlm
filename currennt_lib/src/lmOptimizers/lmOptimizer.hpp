@@ -115,7 +115,7 @@ namespace optimizers {
             int validateEvery,
             int testEvery,
             int temp_show = -1,
-            int limit_hour = 3 
+            int limit_hour = 90
             );
 
         /**
