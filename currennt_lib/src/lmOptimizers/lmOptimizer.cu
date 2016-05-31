@@ -282,6 +282,9 @@ namespace optimizers {
             if (m_numDevice == 1) _updateWeights();
             else                  _updateWeightsMultiGpu();
         }
+  #ifdef MPI
+        _syncWeight();
+  #endif
 
   #ifdef MPI
         _syncWeight();
