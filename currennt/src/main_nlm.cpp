@@ -260,7 +260,8 @@ int trainerMain(const Configuration &config)
 
             printf("done.\n");
             printOptimizer(config, *optimizer);
-
+            if (config.limitHour() > 0)
+                optimizer->setLimitHour(config.limitHour());
             std::string infoRows;
             // continue from autosave?
 
