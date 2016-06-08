@@ -101,6 +101,7 @@ private:
     int m_max_lookup_size;
     int m_max_vocab_size;
     int m_temp_show;
+    int m_limithour;
 
     std::string m_networkFile;
     std::string m_trainedNetwork;
@@ -113,6 +114,7 @@ private:
     std::string m_wsdResult;
     std::string m_importDir;
     std::string m_exportDir;
+    std::string m_tmpbin;
 
     std::vector<std::string> m_trainingFiles;
     std::vector<std::string> m_validationFiles;
@@ -489,6 +491,9 @@ public:
     const std::string& wsdResult() const;
     std::string importDir() const;
     std::string exportDir() const;
+
+    const std::string& tmpBinary() const;
+    int limitHour() const;
     bool fixedLookup() const;
 };
 

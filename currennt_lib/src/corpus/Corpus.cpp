@@ -41,6 +41,9 @@ arrange of DataSet.cpp, for NLP corpus reading
 #include <limits>
 #include <cassert>
 
+#ifdef _MYMPI
+//#include "../../../mpi/mpiumap.hpp"
+#endif
 
 namespace {
 namespace internal {
@@ -732,7 +735,45 @@ namespace data_sets {
     }
     /// end of 'for mpi ver constructor'
 
-#ifdef MPI
+#ifdef _MYMPI
+
+    void str_bcast(std::string& s) 
+    {
+        int size = (int)s.size();
+        MPI::COMM_WORLD.Bcast(&size, 1, MPI::INT, 0);
+        char* arr = new char[size];
+        strcpy(arr, s.c_str());
+        MPI::COMM_WORLD.Bcast((void*)arr, (int)size, MPI::CHAR, 0);
+        s.assign(arr, size); 
+        delete arr;
+    }
+
+    void Corpus::_dictBcast()
+    {
+        std::vector<std::string> keys;
+        std::vector<int> values;
+        int size = (int)m_wordids.size();
+        if (MPI::COMM_WORLD.Get_rank() == 0) {
+            keys.reserve(size);
+            values.reserve(size);
+            for (auto it = m_wordids.begin(); it != m_wordids.end(); it++) {
+                keys.push_back(it->first);
+                values.push_back(it->second);
+            }
+        }
+        MPI::COMM_WORLD.Bcast(&size, 1, MPI::INT, 0);
+        if (MPI::COMM_WORLD.Get_rank() != 0) {
+            keys.resize(size);
+            values.resize(size);
+        }
+        for (int i = 0; i < size; ++i) {
+            str_bcast(keys.at(i));
+        }
+        MPI::COMM_WORLD.Bcast(values.data(), size, MPI::INT, 0);
+        for (int i = 0; i < size; ++i) {
+            m_wordids[keys.at(i)] = values.at(i);
+        }
+    }
     // this constructor is used with mpi
     Corpus::Corpus(const std::string inputfn, const std::string outputfn, const int rank, const int procs,
                    int parSeq, real_t fraction, int truncSeqLength, bool fracShuf, bool seqShuf, real_t noiseDev,
@@ -777,17 +818,18 @@ namespace data_sets {
         m_cacheFile.open(tmpFileName.c_str(), std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::trunc);
         if (!m_cacheFile.good())
             throw std::runtime_error(std::string("Cannot open temporary file '") + tmpFileName + "'");
-
+        std::vector<std::string> files = std::vector<std::string>();
+        files.push_back(inputfn);
         // TODO rewrite  no need?
         // /*
-        if (!m_fixed_wordDict){
+        if (!m_fixed_wordDict && rank == 0){
             if (m_wordids.find("<s>") == m_wordids.end())
                 m_wordids["<s>"] = m_nextid++;
             if (m_wordids.find("</s>") == m_wordids.end())
                 m_wordids["</s>"] = m_nextid++;
             if (m_wordids.find("<UNK>") == m_wordids.end())
                 m_wordids["<UNK>"] = m_nextid++;
-            _makeWordDict(txtfiles);
+            _makeWordDict(files);
             m_fixed_wordDict = true;
         }
         // */
@@ -800,35 +842,45 @@ namespace data_sets {
         // m_wordids is already made
 
         //broadcast m_wordids
-        bmpi::communicator world;
+        _dictBcast();
+        /*
+        boost::mpi::communicator world;
         mpiumap<std::string, int> mm(world, m_wordids);
         mm.mmbroadcast(); // rank-0's map is stored in mm
         if (rank != 0)
             mm.getMap(&m_wordids);
+        */
 
         int *buf;
-        int dataAmount;
+        int dataAmount; 
         int bufsize = truncSeqLength - 1;
-        {{  // parallel loading from binary file
-            int readsize;
-            MPI::Status status;
-            MPI::File f = MPI::File::Open(MPI::COMM_WORLD, outputfn.c_str(),
+        int mallocsize = 268435456; // 1gb 
+        //{{  // parallel loading from binary file
+        int readsize;
+        int l = 0;
+        MPI::Status status;
+        MPI::File f = MPI::File::Open(MPI::COMM_WORLD, outputfn.c_str(),
                                           MPI::MODE_RDONLY, MPI::INFO_NULL);
-            MPI::Offset fsize = f.Get_size() / sizeof(int);
-            dataAmount = (fsize / bufsize) / procs; // number-of-mini-batch / procs
+        MPI::Offset fsize = f.Get_size() / sizeof(int);
+        dataAmount = (fsize / bufsize) / procs; // number-of-mini-batch / procs
+        if (mallocsize > (fsize / procs) ) 
             readsize = dataAmount * bufsize;
-            buf = (int*) malloc(readsize * sizeof(int));
-            f.Set_view(rank * readsize * sizeof(int), MPI_INT, MPI_INT, "native", MPI::INFO_NULL);
-            f.Read((void*)buf, readsize, MPI_INT, status);
-        }} // end of parallel loading from binary file
-
-        {{  //create sequence data
+        else 
+            readsize = (mallocsize / bufsize) * bufsize;
+        buf = (int*) malloc(readsize * sizeof(int));
+        int max_iteration = ((dataAmount * bufsize) / readsize);
+        while (l < max_iteration) {
+            
+            f.Set_view( (procs * l * readsize) * sizeof(int) + rank * readsize * sizeof(int), MPI_INT, MPI_INT, "native", MPI::INFO_NULL);
+            f.Read_all((void*)buf, readsize, MPI_INT, status);
+            ++l;
+            
             std::vector<sequence_t> sequences;
 
             int seqidxCount = 0;
             int loadLength, startpos;
             std::string line;
-            for (int i = 0; i < dataAmount; ++i) {
+            for (int i = 0; i < (readsize / bufsize); ++i) {
                 // reading first
                 startpos = i * bufsize;
                 Cpu::int_vector inputs = _makeInputFromBuffer(buf, startpos, bufsize);
@@ -869,10 +921,10 @@ namespace data_sets {
             m_threadData->thread    = boost::thread(&Corpus::_nextFracThreadFn, this);
 
             m_sequences.insert(m_sequences.end(), sequences.begin(), sequences.end());
-        }} // loading end
+        } // loading end
 
         free(buf);
-
+        f.Close();
         m_totalSequences = m_sequences.size();
         m_outputPatternSize = std::min(m_max_vocab_size, (int)m_wordids.size());
         printf("outputPatternSize: %d(m_max_vocab_size %d, m_wordids.size %d)\n", m_outputPatternSize, m_max_vocab_size, m_wordids.size());
@@ -881,7 +933,8 @@ namespace data_sets {
         if (Configuration::instance().trainingMode())
             std::sort(m_sequences.begin(), m_sequences.end(), internal::comp_seqs);
     }
-#endif
+#endif //_MYMPI
+
     Corpus::~Corpus()
     {
         // terminate the next fraction thread

@@ -35,9 +35,10 @@
 #include <climits>
 #include <fstream>
 
-#ifdef MPI
+#ifdef _MYMPI
 
 #include <mpi.h>
+//#include <boost/mpi/communicator.hpp>
 
 #endif
 
@@ -85,6 +86,7 @@ namespace data_sets {
         void _writeTemp(std::string txtfile, std::string outputfile, int size);
         Cpu::int_vector _makeInputFromBuffer(int* buf, int startpos, int size);
         Cpu::int_vector _makeTargetFromBuffer(int* buf, int startpos, int size);
+        void _dictBcast();
 
     private:
         bool             m_fractionShuffling;
@@ -139,7 +141,7 @@ namespace data_sets {
             int max_vocab_size = -1, int appearing_threshold = 5);
 
         // mpi ver constructor
-#ifdef MPI
+#ifdef _MYMPI
         Corpus(const std::string inputfn, const std::string outputfn, const int rank, const int procs,
             int parSeq, real_t fraction=1, int truncSeqLength=0,
             bool fracShuf=false, bool seqShuf=false, real_t noiseDev=0,

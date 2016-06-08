@@ -78,6 +78,9 @@ namespace optimizers {
         real_t _processDataSet(data_sets::Corpus &ds, bool calcWeightUpdates, real_t *classError);
         void _storeWeights();
         void _restoreWeights();
+#ifdef _MYMPI
+        void _syncWeight();
+#endif
 
     protected:
         static void _exportWeights(const helpers::JsonDocument &jsonDoc, const char *arrayName, const std::vector<real_vector> &weights);
@@ -115,7 +118,7 @@ namespace optimizers {
             int validateEvery,
             int testEvery,
             int temp_show = -1,
-            int limit_hour = 90
+            int limit_hour = 1
             );
 
         /**
@@ -223,6 +226,8 @@ namespace optimizers {
          * @param jsonDoc The JSON document
          */
         virtual void importState(const helpers::JsonDocument &jsonDoc);
+
+        void setLimitHour(int limit_hour);
     };
 
 } // namespace optimizers
