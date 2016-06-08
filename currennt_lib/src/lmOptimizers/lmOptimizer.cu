@@ -34,6 +34,7 @@
 #include <math.h>
 
 #include <thrust/transform.h>
+#include <boost/filesystem.hpp>
 
 
 #ifdef MPI
@@ -158,7 +159,7 @@ namespace optimizers {
     {
         // process all data set fractions
         real_t error = 0;
-        *classErr or = (real_t) ds.totalTimesteps();
+        *classError = (real_t) ds.totalTimesteps();
 
         int consume_sequences = 0;
 
@@ -177,7 +178,7 @@ namespace optimizers {
             for (int i = 0; i < m_numDevice; ++i)
                 m_neuralNetwork.loadSequences(*(fracs[i]), i);
 
-            consume_sequences += m_numDevice;
+            consume_sequences += m_numDevice * parallelSequences;
             m_neuralNetwork.computeForwardPass();
 
             if (!m_errorType) // log_prob
@@ -215,27 +216,29 @@ namespace optimizers {
 
 
                 // case lookup-layer (i = 1)
-                {
-                    for (int device = 0; device < m_numDevice; ++device){
-                        cudaSetDevice(device);
-                        int N = device * m_layer_size;
+                for (int device = 0; device < m_numDevice; ++device){
+                    cudaSetDevice(device);
+                    int N = device * m_layer_size;
+                    int dummy = 0;
+                    {
+                    // for (int device = 0; device < m_numDevice; ++device){
+                        // cudaSetDevice(device);
+                        // int N = device * m_layer_size;
                         layers::LookupLayer<TDevice> *layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers(device)[1].get());
                         if (!layer || layer->fixed())
-                            continue;
-                        if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
+                            dummy = 1;
+                        else if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
                             thrust::transform(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin(), m_curWeightUpdates[N + 1].begin(), thrust::plus<real_t>());
                         else
                         	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin());
 
                     }
 
-                }
+                // }
 
 
-                for (size_t i = 2; i < m_neuralNetwork.layers().size()-1; ++i) {
-                    for (int device = 0; device < m_numDevice; ++device){
-                        cudaSetDevice(device);
-                        int N = device * m_layer_size;
+                    for (size_t i = 2; i < m_neuralNetwork.layers().size()-1; ++i) {
+                        // int N = device * m_layer_size;
                         layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
                         if (!layer)
                             continue;
@@ -262,7 +265,7 @@ namespace optimizers {
             firstFraction = false;
             if (status == 1) break;
             ++loop_count;
-            if(m_tmp_show > 0 && loop_count % m_tmp_show ==0)
+            if(m_tmp_show > 0 && consume_sequences % m_tmp_show ==0)
                 internal::showProgress(m_curEpoch, error / consume_sequences, (float)consume_sequences / (float)ds.totalSequences());
             time_point now =  std::chrono::system_clock::now();
 
@@ -286,18 +289,14 @@ namespace optimizers {
         _syncWeight();
   #endif
 
-  #ifdef MPI
-        _syncWeight();
-  #endif
-
         // normalize the errors : default
-        if m_errorType)
-            error /= ds.totalSequences();
-        else  // perplexity
-            error = exp(error / ds.totalTimesteps());
+        // if (m_errorType)
+        error = error / (float)ds.totalSequences();
+        // else  // perplexity
+            // error = exp(error / ds.totalTimesteps());
         *classError /= (real_t)ds.totalTimesteps();
         if (m_tmp_show > 0)
-            internal::refreshLine(m_curEpoch);
+            printf("\n %5d | ", m_curEpoch);
         return error;
     }
 
@@ -410,6 +409,13 @@ namespace optimizers {
     }
 
     template <typename TDevice>
+    void lmOptimizer<TDevice>::saveEvery(std::string savedir)
+    {
+        m_savedir = savedir;
+        m_saveEvery = true;
+    }
+
+    template <typename TDevice>
     lmOptimizer<TDevice>::lmOptimizer(NeuralNetwork<TDevice> &neuralNetwork, data_sets::Corpus &trainingSet,
                                    data_sets::Corpus &validationSet, data_sets::Corpus &testSet,
                                    int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery, int temp_show, int limit_hour)
@@ -432,8 +438,10 @@ namespace optimizers {
         , m_curTrainingClassError     (0)
         , m_curTestClassError         (0)
         , m_errorType                 (0)
+        , m_savedir                   ("")
+        , m_saveEvery                 (false)
         , m_tmp_show                  (temp_show)
-	, m_limit_hour 	              (limit_hour)
+        , m_limit_hour                  (limit_hour)
     {
         // initialize the best weights vectors
 	m_start_time = std::chrono::system_clock::now();
@@ -559,8 +567,14 @@ namespace optimizers {
 
             // train one epoch and update the weights
             m_curTrainingError = _processDataSet(m_trainingSet, true, &m_curTrainingClassError);
-
-	    m_start_time = std::chrono::system_clock::now();
+            if (m_saveEvery) {
+                std::string Epoch = std::to_string(m_curEpoch);
+                std::string dir = m_savedir + "/" + Epoch;
+                boost::system::error_code err;
+                const bool ret = boost::filesystem::create_directory(dir, err);
+                m_neuralNetwork.exportWeightsBinary(dir);
+            }
+	    // m_start_time = std::chrono::system_clock::now();
 
             // calculate the validation error and store the weights if we a new lowest error
             if (!m_validationSet.empty() && m_curEpoch % m_validateEvery == 0) {
@@ -595,7 +609,7 @@ namespace optimizers {
 
         return m_finished;
 #endif
-#ifndef MPI
+#ifdef MPI
         if (!m_finished) {
             ++m_curEpoch;
 

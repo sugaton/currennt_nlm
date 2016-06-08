@@ -68,7 +68,7 @@ namespace {
             //*beta1t *= beta1;
             //*beta2t *= beta2;
 
-            return theta[i] - ( alpha / (1 - beta1t) * (m[i] / (sqrtf(v[i] / (1 - beta2t)) + eps)) );
+            return theta[i] - ( alpha / (1 - beta1t)) * (m[i] / (sqrtf(v[i] / (1 - beta2t)) + eps));
             // calculate the new weight
             //return theta[i] + delta;
 
@@ -133,12 +133,13 @@ namespace optimizers {
             if (!layer)
                 continue;
 
-
+            /*
             thrust::transform(this->_curWeightUpdates()[i].begin(),
                               this->_curWeightUpdates()[i].end(),
                               thrust::constant_iterator<real_t>((real_t)(parallelSequences)),
                               this->_curWeightUpdates()[i].begin(),
                               thrust::divides<real_t>());
+                              // */
             //std::cout << "layer " << layer->name() << ": learning rate " << updateWeightFn.learningRate << std::endl;
 
             updateWeightFn.beta1t        = m_beta1t;
@@ -155,8 +156,13 @@ namespace optimizers {
                 updateWeightFn
                 );
         }
-        m_beta1t *= m_beta1;
-        m_beta2t *= m_beta2;
+        if (m_t_ < m_tlimit) {
+            m_beta1t *= m_beta1;
+            m_beta2t *= m_beta2;
+            ++m_t_;
+        }
+        else
+            printf("m_beta**t: %d %f %f\n", m_t_, m_beta1t, m_beta2t);
     }
 
     /**
@@ -207,10 +213,10 @@ namespace optimizers {
         }
         // waiting calculating sum
         cudaDeviceSynchronize();
-        for (size_t i = 2; i < this->_neuralNetwork().layers().size()-1; ++i) {
-            for (int device = 0; device < this->_numDevice(); ++device){
-                cudaSetDevice(device);
-                int N = this->_layersize() * device;
+        for (int device = 0; device < this->_numDevice(); ++device){
+            cudaSetDevice(device);
+            int N = this->_layersize() * device;
+            for (size_t i = 2; i < this->_neuralNetwork().layers().size()-1; ++i) {
                 //average weights
                 thrust::copy(this->_UpdateSums()[i].begin(),
                              this->_UpdateSums()[i].end(),
@@ -336,9 +342,14 @@ namespace optimizers {
                     );
             }
         }
+        if (m_t_ < m_tlimit) {
+            m_beta1t *= m_beta1;
+            m_beta2t *= m_beta2;
+            m_t_ += 1;
+        }
+        else
+            printf("m_beta**t: %d %f %f\n", m_t_, m_beta1t, m_beta2t);
 
-        m_beta1t *= m_beta1;
-        m_beta2t *= m_beta2;
     }
 
 
@@ -346,13 +357,15 @@ namespace optimizers {
     Adam<TDevice>::Adam(
         NeuralNetwork<TDevice> &neuralNetwork, data_sets::Corpus &trainingSet, data_sets::Corpus &validationSet,
         data_sets::Corpus &testSet, int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery,
-        real_t learningRate, real_t beta1, real_t beta2, real_t eps, int tmp_show)
+        real_t learningRate, int tmp_show, real_t beta1, real_t beta2, real_t eps)
         : lmOptimizer<TDevice>(neuralNetwork, trainingSet, validationSet, testSet, maxEpochs, maxEpochsNoBest, validateEvery, testEvery, tmp_show)
         , m_learningRate    (learningRate)
         , m_learningRateFirst(learningRate)
         , m_beta1        (beta1)
         , m_beta2        (beta2)
         , m_eps        (eps)
+        , m_tlimit       (3000)
+        , m_t_            (0)
     {
         // intialize the weight deltas vectors with zeros
         // TODO create Deltas for all embedding

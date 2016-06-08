@@ -58,6 +58,9 @@ namespace optimizers {
         std::vector<real_t*> m_moment;
         std::vector<real_t*> m_second_moment;
 
+        int m_tlimit;
+        int m_t_;
+
 
         std::vector<real_vector> m_weightDeltas;
 
@@ -92,10 +95,10 @@ namespace optimizers {
             int validateEvery,
             int testEvery,
             real_t learningRate,
+            int  tmp_show = -1,
             real_t beta1 = 0.9,
             real_t beta2 = 0.99,
-            real_t eps   = 1.0e-8,
-            int  tmp_show = -1
+            real_t eps   = 1.0e-8
             );
 
         /**

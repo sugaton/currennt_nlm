@@ -66,9 +66,12 @@ namespace optimizers {
         int    m_layer_size;
         int    m_numDevice;
         int    m_tmp_show;
-	int    m_limit_hour;
+        int    m_limit_hour;
 
-	time_point m_start_time;
+        std::string m_savedir;
+        bool m_saveEvery;
+
+        time_point m_start_time;
         std::vector<real_vector> m_curWeightUpdates;
         std::vector<Cpu::real_vector> m_allWeightUpdates;
         std::vector<Cpu::real_vector> m_UpdateSums;
@@ -118,7 +121,7 @@ namespace optimizers {
             int validateEvery,
             int testEvery,
             int temp_show = -1,
-            int limit_hour = 3
+            int limit_hour = 900
             );
 
         /**
@@ -202,6 +205,7 @@ namespace optimizers {
          */
         real_t curTestClassError() const;
 
+        void saveEvery(std::string savedir);
         /**
          * Optimizes the weights
          *

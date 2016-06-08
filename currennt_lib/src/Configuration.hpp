@@ -78,6 +78,7 @@ private:
     unsigned m_maxEpochsNoBest;
     unsigned m_validateEvery;
     unsigned m_testEvery;
+    unsigned m_saveEvery;
     unsigned m_randomSeed;
     unsigned m_outputFeatureKind;
 
@@ -253,6 +254,8 @@ public:
      * @return The number of training epochs after which the test error shall be calculated
      */
     int testEvery() const;
+
+    int saveEvery() const;
 
     /**
      * Returns the learning rate for the steepest descent optimizer

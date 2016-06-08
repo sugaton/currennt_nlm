@@ -149,6 +149,7 @@ Configuration::Configuration(int argc, const char *argv[])
         ("max_epochs_no_best",  po::value(&m_maxEpochsNoBest)  ->default_value(20),                    "sets the maximum number of training epochs in which no new lowest error could be achieved")
         ("validate_every",      po::value(&m_validateEvery)    ->default_value(1),                     "sets the number of epochs until the validation error is computed")
         ("test_every",          po::value(&m_testEvery)        ->default_value(1),                     "sets the number of epochs until the test error is computed")
+        ("save_every",          po::value(&m_saveEvery)        ->default_value(0),                     "sets the number of epochs until the test error is computed")
         ("optimizer",           po::value(&optimizerString)    ->default_value("steepest_descent"),    "sets the optimizer used for updating the weights")
         ("learning_rate",       po::value(&m_learningRate)     ->default_value((real_t)1e-5, "1e-5"),  "sets the learning rate for the steepest descent optimizer")
         ("momentum",            po::value(&m_momentum)         ->default_value((real_t)0.9,  "0.9"),   "sets the momentum for the steepest descent optimizer")
@@ -461,6 +462,12 @@ int Configuration::validateEvery() const
 int Configuration::testEvery() const
 {
     return (int)m_testEvery;
+}
+
+
+int Configuration::saveEvery() const
+{
+    return (int)m_saveEvery;
 }
 
 real_t Configuration::learningRate() const
