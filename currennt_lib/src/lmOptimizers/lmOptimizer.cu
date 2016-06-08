@@ -37,7 +37,7 @@
 #include <boost/filesystem.hpp>
 
 
-#ifdef MPI
+#ifdef _MYMPI
 
 #include <mpi.h>
 
@@ -81,7 +81,7 @@ namespace internal{
 
 namespace optimizers {
 
-#ifdef MPI
+#ifdef _MYMPI
     template <typename TDevice>
     void lmOptimizer<TDevice>::_syncWeight()
     {
@@ -90,13 +90,13 @@ namespace optimizers {
         cudaSetDevice(0);
         for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
             if (i == 1) {
-              	layers::LookupLayer<TDevice> *_layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
+              	layers::LookupLayer<TDevice> *_layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers()[i].get());
                 if (_layer->fixed())
                     continue;
                 //hoge hoge
                 continue;
             }
-          	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
+          	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers()[i].get());
             if (!layer)
                 continue;
             syncSet.insert(i);
@@ -143,10 +143,10 @@ namespace optimizers {
                 cudaSetDevice(device);
               	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
                 if(!layer)
-                    continue
+                    continue;
                 thrust:copy(
-                    m_UpdateSums[i].begin()
-                    m_UpdateSums[i].end()
+                    m_UpdateSums[i].begin(),
+                    m_UpdateSums[i].end(),
                     layer->weights().begin()
                 );
             }
@@ -285,7 +285,7 @@ namespace optimizers {
             if (m_numDevice == 1) _updateWeights();
             else                  _updateWeightsMultiGpu();
         }
-  #ifdef MPI
+  #ifdef _MYMPI
         _syncWeight();
   #endif
 
@@ -561,7 +561,7 @@ namespace optimizers {
     template <typename TDevice>
     bool lmOptimizer<TDevice>::train()
     {
-#ifndef MPI
+#ifndef _MYMPI
         if (!m_finished) {
             ++m_curEpoch;
 
@@ -609,7 +609,8 @@ namespace optimizers {
 
         return m_finished;
 #endif
-#ifdef MPI
+
+#ifdef _MYMPI
         if (!m_finished) {
             ++m_curEpoch;
 
@@ -694,6 +695,11 @@ namespace optimizers {
         _importWeights(jsonDoc, "optimizer_best_weights", &m_bestWeights);
     }
 
+    template <typename TDevice>
+    void lmOptimizer<TDevice>::setLimitHour(int limit_hour)
+    {
+        m_limit_hour = limit_hour;
+    }
 
     // explicit template instantiations
     template class lmOptimizer<Cpu>;

@@ -72,6 +72,7 @@ namespace optimizers {
         bool m_saveEvery;
 
         time_point m_start_time;
+
         std::vector<real_vector> m_curWeightUpdates;
         std::vector<Cpu::real_vector> m_allWeightUpdates;
         std::vector<Cpu::real_vector> m_UpdateSums;
@@ -81,7 +82,7 @@ namespace optimizers {
         real_t _processDataSet(data_sets::Corpus &ds, bool calcWeightUpdates, real_t *classError);
         void _storeWeights();
         void _restoreWeights();
-#ifdef MPI
+#ifdef _MYMPI
         void _syncWeight();
 #endif
 
@@ -230,9 +231,12 @@ namespace optimizers {
          * @param jsonDoc The JSON document
          */
         virtual void importState(const helpers::JsonDocument &jsonDoc);
+
+        void setLimitHour(int limit_hour);
     };
 
 } // namespace optimizers
 
 
 #endif // OPTIMIZERS_OPTIMIZER_HPP
+

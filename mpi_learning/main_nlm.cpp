@@ -26,22 +26,22 @@
  ***/
 
 
-#include "../../currennt_lib/src/helpers/Matrix.hpp"
-#include "../../currennt_lib/src/Configuration.hpp"
-#include "../../currennt_lib/src/NeuralNetwork.hpp"
-#include "../../currennt_lib/src/layers/LstmLayer.hpp"
-#include "../../currennt_lib/src/layers/BinaryClassificationLayer.hpp"
-#include "../../currennt_lib/src/layers/MulticlassClassificationLayer.hpp"
+#include "../currennt_lib/src/helpers/Matrix.hpp"
+#include "../currennt_lib/src/Configuration.hpp"
+#include "../currennt_lib/src/NeuralNetwork.hpp"
+#include "../currennt_lib/src/layers/LstmLayer.hpp"
+#include "../currennt_lib/src/layers/BinaryClassificationLayer.hpp"
+#include "../currennt_lib/src/layers/MulticlassClassificationLayer.hpp"
 
-#include "../../currennt_lib/src/rnnlm/intInputLayer.hpp"
-#include "../../currennt_lib/src/rnnlm/LookupLayer.hpp"
-#include "../../currennt_lib/src/lmOptimizers/lmSteepestDescentOptimizer.hpp"
-#include "../../currennt_lib/src/lmOptimizers/Adam.hpp"
+#include "../currennt_lib/src/rnnlm/intInputLayer.hpp"
+#include "../currennt_lib/src/rnnlm/LookupLayer.hpp"
+#include "../currennt_lib/src/lmOptimizers/lmSteepestDescentOptimizer.hpp"
+#include "../currennt_lib/src/lmOptimizers/Adam.hpp"
 // #include "../../currennt_lib/src/optimizers/SteepestDescentOptimizer.hpp"
 
-#include "../../currennt_lib/src/helpers/JsonClasses.hpp"
-#include "../../currennt_lib/src/rapidjson/prettywriter.h"
-#include "../../currennt_lib/src/rapidjson/filestream.h"
+#include "../currennt_lib/src/helpers/JsonClasses.hpp"
+#include "../currennt_lib/src/rapidjson/prettywriter.h"
+#include "../currennt_lib/src/rapidjson/filestream.h"
 
 #include <boost/date_time/posix_time/posix_time.hpp>
 #include <boost/date_time/posix_time/posix_time_duration.hpp>
@@ -66,6 +66,7 @@
 #include <cstdlib>
 #include <math.h>
 #include <iomanip>
+#include <mpi.h>
 
 
 void swap32 (uint32_t *p)
@@ -102,7 +103,7 @@ enum data_set_type
 // helper functions (implementation below)
 void readJsonFile(rapidjson::Document *doc, const std::string &filename);
 void loadDict(rapidjson::Document *doc, std::unordered_map<std::string, int> *p_dict);
-boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, const int max_vocab, std::unordered_map<std::string, int>* p_map=NULL, int constructDict = 0);
+boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, const int max_vocab, std::unordered_map<std::string, int>* p_map=NULL, int constructDict = 0, bool ifbcast = false);
 template <typename TDevice> void printLayers(const NeuralNetwork<TDevice> &nn);
 template <typename TDevice> void printOptimizer(const optimizers::lmOptimizer<TDevice> &optimizer);
 template <typename TDevice> void saveNetwork(const NeuralNetwork<TDevice> &nn, const std::string &filename);
@@ -120,10 +121,12 @@ int trainerMain(const Configuration &config)
 {
     try {
         int rank = MPI::COMM_WORLD.Get_rank();
+         printf("rank %d\n", rank);
+if (MPI::COMM_WORLD.Get_rank() == 0) printf("here:%d\n",__LINE__);
         mpiprintf("max_vocab_size: %d\n", config.max_vocab_size());
         // read the neural network description file
         std::string networkFile = config.continueFile().empty() ? config.networkFile() : config.continueFile();
-        mpiprintf("Reading network from '%s'... ", networkFile.c_str());
+        printf("Reading network from '%s'... ", networkFile.c_str());
         fflush(stdout);
         rapidjson::Document netDoc;
         std::string importdir = config.importDir();
@@ -132,7 +135,7 @@ int trainerMain(const Configuration &config)
         mpiprintf("done.\n");
         mpiprintf("\n");
         std::unordered_map<std::string, int> _wordDict;
-        if (importdir != "") {
+        if (importdir != "" && rank == 0) {
             std::string fname = importdir + "/wdict.cereal";
             importDictBinary(_wordDict, fname);
         }
@@ -146,17 +149,14 @@ int trainerMain(const Configuration &config)
         boost::shared_ptr<data_sets::Corpus> feedForwardSet = boost::make_shared<data_sets::Corpus>();
 
         // not efficient
-        if (_wordDict.empty()){
-            trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size());
-            _wordDict = *(trainingSet->dict()); // copy from trainingSet
-        }
-        else{
+        
             // TODO add option fixed_dict();
             //    int iffix = config.fixed_dict()
             //    trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, iffix);
-            trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, 0);
-            _wordDict = *(trainingSet->dict());
-        }
+if (MPI::COMM_WORLD.Get_rank() == 0) printf("here:%d\n",__LINE__);
+        trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, 1);
+        _wordDict = *(trainingSet->dict());
+        
 
         if (rank == 0) {
             // use same wordDict as used in trainingSet
@@ -178,7 +178,7 @@ int trainerMain(const Configuration &config)
         // trainingSet->outputPatternSize
 
         // create the neural network
-        mpiprintf("Creating the neural network... ");
+        printf("Creating the neural network... ");
         fflush(stdout);
         if (config.max_lookup_size() != -1)
             netDoc.AddMember("max_lookup_size", config.max_lookup_size(), netDoc.GetAllocator());
@@ -191,6 +191,7 @@ int trainerMain(const Configuration &config)
         // if (config.max_vocab_size() != -1 && config.max_vocab_size() < outputSize)
         //     outputSize = config.max_vocab_size();
 
+if (MPI::COMM_WORLD.Get_rank() == 0) printf("here:%d\n",__LINE__);
         NeuralNetwork<TDevice> neuralNetwork(netDoc, parallelSequences, maxSeqLength, inputSize, outputSize, vocab_size, config.devices());
         neuralNetwork.setWordDict(&_wordDict);
         if (importdir != "")
@@ -200,16 +201,19 @@ int trainerMain(const Configuration &config)
         if (config.fixedLookup())
             neuralNetwork.fixLookup();
 
+if (MPI::COMM_WORLD.Get_rank() == 0) printf("here:%d\n",__LINE__);
+/*
         if (!trainingSet->empty() && trainingSet->outputPatternSize() != neuralNetwork.postOutputLayer().size())
             throw std::runtime_error("Post output layer size != target pattern size of the training set");
         if (!validationSet->empty() && validationSet->outputPatternSize() != neuralNetwork.postOutputLayer().size())
             throw std::runtime_error("Post output layer size != target pattern size of the validation set");
         if (!testSet->empty() && testSet->outputPatternSize() != neuralNetwork.postOutputLayer().size())
             throw std::runtime_error("Post output layer size != target pattern size of the test set");
+*/
 
             mpiprintf("done.\n");
             mpiprintf("Layers:\n");
-        printLayers(neuralNetwork);
+        //printLayers(neuralNetwork);
         mpiprintf("\n");
 
         // check if this is a classification task
@@ -221,6 +225,7 @@ int trainerMain(const Configuration &config)
 
         mpiprintf("\n");
 
+if (MPI::COMM_WORLD.Get_rank() == 0) printf("here:%d\n",__LINE__);
         // create the optimizer
         if (config.trainingMode()) {
             mpiprintf("Creating the optimizer... ");
@@ -267,6 +272,7 @@ int trainerMain(const Configuration &config)
                 mpiprintf("done.\n\n");
             }
 
+if (MPI::COMM_WORLD.Get_rank() == 0) printf("here:%d\n",__LINE__);
             // train the network
             mpiprintf("Starting training...\n");
             mpiprintf("\n");
@@ -329,7 +335,8 @@ int trainerMain(const Configuration &config)
             			    }
                             saveFileS << ".best.jsn";
                             //saveNetwork(neuralNetwork, saveFileS.str());
-                            neuralNetwork.exportWeightsBinary(savedir);
+                            if (rank == 0)
+                                neuralNetwork.exportWeightsBinary(savedir);
                         }
                         infoRows += mpiprintfRow(" yes \n");
                     }
@@ -340,7 +347,7 @@ int trainerMain(const Configuration &config)
                     infoRows += mpiprintfRow("        \n");
 
                 // autosave
-                if (config.autosave())
+                if (config.autosave() && rank == 0)
                     saveState(neuralNetwork, *optimizer, infoRows);
             }
 
@@ -361,9 +368,11 @@ int trainerMain(const Configuration &config)
             //  mpiprintf("Storing the trained network in '%s'... ", config.trainedNetworkFile().c_str());
             mpiprintf("Storing the trained network in '%s'... ", savedir.c_str());
             // saveNetwork(neuralNetwork, config.trainedNetworkFile());
-            neuralNetwork.exportWeightsBinary(savedir);
+            if (rank == 0)
+                neuralNetwork.exportWeightsBinary(savedir);
             std::string ofname = savedir + "/wdict.cereal";
-            exportDictBinary(_wordDict, ofname);
+            if (rank == 0)
+                exportDictBinary(_wordDict, ofname);
             mpiprintf("done.\n");
 
             std::cout << "Removing cache file(s) ..." << std::endl;
@@ -384,18 +393,30 @@ int trainerMain(const Configuration &config)
 }
 
 
-int main(int argc, const char *argv[])
+int main(int argc, char *argv[])
 {
     // Configuration config(argc, argv);
     MPI::Init(argc, argv);
     int ret;
     // load the configuration
-    char** config_arg[3][20];
-    config_arg[0] = "mpi_learn";
-    config_arg[1] = "--option_file";
-    config_arg[2] = "config.cfg";
-    Configuration config(3, config_arg);
+if (MPI::COMM_WORLD.Get_rank() == 0) printf("here:%d\n",__LINE__);
+///*
+    char** config_arg = new char*[3];
+    config_arg[0] = new char[20];
+    config_arg[1] = new char[20];
+    config_arg[2] = new char[20];
+    strcpy(config_arg[0], "mpi_learn");
+    strcpy(config_arg[1], "--options_file");
+    strcpy(config_arg[2], "config.cfg");
+//*/
+    //char config_arg[3][20] = {"mpi_learn", "--options_file", "config.cfg"};
+    //char** config_arg = {"mpi_learn", "--options_file", "config.cfg"};
+    //printf("args: %s %s %s\n", config_arg[0], config_arg[1], config_arg[2]);
+if (MPI::COMM_WORLD.Get_rank() == 0) printf("here:%d\n",__LINE__);
 
+    Configuration config(3, (const char**)config_arg);
+
+if (MPI::COMM_WORLD.Get_rank() == 0) printf("here:%d\n",__LINE__);
     // run the execution device specific main function
     if (config.useCuda()) {
         int count;
@@ -484,18 +505,21 @@ void loadDict(rapidjson::Document *doc, std::unordered_map<std::string, int> *p_
 
 }
 
-boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, const int max_vocab, std::unordered_map<std::string, int>* p_map, int constructDict)
+boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, const int max_vocab, std::unordered_map<std::string, int>* p_map, int constructDict, bool ifbcast)
 {
     std::string type;
     std::vector<std::string> filenames;
     real_t fraction = 1;
+    int rank = MPI::COMM_WORLD.Get_rank();
     bool fracShuf   = false;
     bool seqShuf    = false;
     real_t noiseDev = 0;
     std::string cachePath = "";
+    std::string binaryfile = "";
     int truncSeqLength = -1;
 
     cachePath = Configuration::instance().cachePath();
+    binaryfile = Configuration::instance().tmpBinary();
     switch (dsType) {
     case DATA_SET_TRAINING:
         type     = "training set";
@@ -539,12 +563,21 @@ boost::shared_ptr<data_sets::Corpus> loadDataSet(data_set_type dsType, const int
     mpiprintf("...");
     fflush(stdout);
     mpiprintf("maxvocab: %d\n", max_vocab);
+    int procs = MPI::COMM_WORLD.Get_size();
     //std::cout << "truncating to " << truncSeqLength << std::endl;
-    boost::shared_ptr<data_sets::Corpus> ds = boost::make_shared<data_sets::Corpus>(
-        filenames,
-        Configuration::instance().parallelSequences(), fraction, truncSeqLength,
-        fracShuf, seqShuf, noiseDev, cachePath, p_map, constructDict, max_vocab);
-
+    boost::shared_ptr<data_sets::Corpus> ds;
+    if (ifbcast) {
+        ds  = boost::make_shared<data_sets::Corpus>(
+            filenames.at(0), binaryfile, rank, procs,
+            Configuration::instance().parallelSequences(), fraction, truncSeqLength,
+            fracShuf, seqShuf, noiseDev, cachePath, p_map, constructDict, max_vocab);
+    }
+    else {
+        ds = boost::make_shared<data_sets::Corpus>(
+             filenames,
+             Configuration::instance().parallelSequences(), fraction, truncSeqLength,
+             fracShuf, seqShuf, noiseDev, cachePath, p_map, constructDict, max_vocab);
+    }
         mpiprintf("done.\n");
         mpiprintf("Loaded fraction:  %d%%\n",   (int)(fraction*100));
         mpiprintf("Sequences:        %lld\n",     ds->totalSequences());
@@ -697,7 +730,7 @@ void restoreState(NeuralNetwork<TDevice> *nn, optimizers::lmOptimizer<TDevice> *
 
 std::string mpiprintfRow(const char *format, ...)
 {
-    if (rank != 0) return;
+    if (MPI::COMM_WORLD.Get_rank() != 0) return "";
     // write to temporary buffer
     char buffer[100];
     va_list args;
@@ -716,7 +749,7 @@ std::string mpiprintfRow(const char *format, ...)
 
 void mpiprintf(const char *format, ...)
 {
-    if (rank != 0) return;
+    if (MPI::COMM_WORLD.Get_rank() != 0) return;
     char buffer[100];
     va_list args;
     va_start(args, format);

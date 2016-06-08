@@ -28,6 +28,8 @@
 #include <fstream>
 #include <sstream>
 
+#include <mpi.h>
+
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/random/random_device.hpp>
@@ -105,6 +107,7 @@ Configuration::Configuration(int argc, const char *argv[])
         throw std::runtime_error("Static instance of class Configuration already created");
     else
         ms_instance = this;
+    
 
     std::string optionsFile;
     std::string optimizerString;
@@ -160,6 +163,7 @@ Configuration::Configuration(int argc, const char *argv[])
         ("max_vocab_size",        po::value(&m_max_vocab_size)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
         ("temporal_show",        po::value(&m_temp_show)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
         ("fixedLookup",        po::value(&m_fixlookup)   ->default_value(false), "if this is true, system don't update input embeddings")
+        ("limit_hour",        po::value(&m_limithour)   ->default_value(-1), "specify maximum learning time")
         ;
 
     po::options_description autosaveOptions("Autosave options");
@@ -189,6 +193,7 @@ Configuration::Configuration(int argc, const char *argv[])
         ("wsdResult",         po::value(&m_wsdResult)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
         ("importDir",         po::value(&m_importDir)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
         ("exportDir",         po::value(&m_exportDir)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
+        ("tmpbin",         po::value(&m_tmpbin)         ->default_value(""),        "for mpi_learning")
         ;
 
     po::options_description weightsInitializationOptions("Weight initialization options");
@@ -215,6 +220,7 @@ Configuration::Configuration(int argc, const char *argv[])
     po::options_description allOptions;
     allOptions.add(visibleOptions);
 
+    printf("args: %s %s %s\n", argv[0], argv[1], argv[2]);
     po::variables_map vm;
     try {
         po::store(po::command_line_parser(argc, argv).options(allOptions).positional(positionalOptions).run(), vm);
@@ -378,6 +384,7 @@ Configuration::Configuration(int argc, const char *argv[])
     }
 
     std::cout << std::endl;
+
 }
 
 Configuration::~Configuration()
@@ -675,4 +682,15 @@ std::string Configuration::importDir() const
 std::string Configuration::exportDir() const
 {
     return m_exportDir;
+}
+
+const std::string& Configuration::tmpBinary() const
+{
+    return m_tmpbin;
+}
+
+
+int Configuration::limitHour() const
+{
+    return m_limithour;
 }
