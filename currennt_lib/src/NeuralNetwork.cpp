@@ -104,6 +104,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc, int 
                         layer = LayerFactory<TDevice>::createLayer(layerType, &*layerChild, weightsSection, parallelSequences, maxSeqLength, m_layers.at(device).back().get());
 
                     m_layers.at(device).push_back(boost::shared_ptr<layers::Layer<TDevice> >(layer));
+        void saveEvery(std::string savedir);
                 }
                 catch (const std::exception &e) {
                     throw std::runtime_error(std::string("Could not create layer: ") + e.what());
@@ -225,10 +226,13 @@ void NeuralNetwork<TDevice>::loadSequences(const data_sets::DataSetFraction &fra
 template <typename TDevice>
 void NeuralNetwork<TDevice>::computeForwardPass()
 {
-    for (int i = 0; i < m_layers.at(0).size(); ++i){
-        for (size_t device = 0; device < m_layers.size(); ++device){
-            cudaSetDevice(device);
-            boost::shared_ptr<layers::Layer<TDevice> > &layer = m_layers.at(device).at(i);
+    // for (int i = 0; i < m_layers.at(0).size(); ++i){
+    for (size_t device = 0; device < m_layers.size(); ++device){
+        cudaSetDevice(device);
+        BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers[device]) {
+        // for (size_t device = 0; device < m_layers.size(); ++device){
+        //     cudaSetDevice(device);
+            // boost::shared_ptr<layers::Layer<TDevice> > &layer = m_layers.at(device).at(i);
             layer->computeForwardPass();
         }
     }
@@ -237,11 +241,13 @@ void NeuralNetwork<TDevice>::computeForwardPass()
 template <typename TDevice>
 void NeuralNetwork<TDevice>::computeBackwardPass()
 {
-    //BOOST_REVERSE_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers[device]) {
-    for (int i = 0; i < m_layers.at(0).size(); ++i){
-        for (size_t device = 0; device < m_layers.size(); ++device){
-            cudaSetDevice(device);
-            boost::shared_ptr<layers::Layer<TDevice> > &layer = m_layers.at(device).at(i);
+    for (size_t device = 0; device < m_layers.size(); ++device){
+        cudaSetDevice(device);
+        BOOST_REVERSE_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers[device]) {
+    // for (int i = 0; i < m_layers.at(0).size(); ++i){
+        // for (size_t device = 0; device < m_layers.size(); ++device){
+            // cudaSetDevice(device);
+            // boost::shared_ptr<layers::Layer<TDevice> > &layer = m_layers.at(device).at(i);
             layer->computeBackwardPass();
         //std::cout << "output errors " << layer->name() << std::endl;
         //thrust::copy(layer->outputErrors().begin(), layer->outputErrors().end(), std::ostream_iterator<real_t>(std::cout, ";"));

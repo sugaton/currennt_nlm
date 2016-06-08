@@ -248,7 +248,7 @@ int trainerMain(const Configuration &config)
                 adm = new optimizers::Adam<TDevice>(
                         neuralNetwork, *trainingSet, *validationSet, *testSet,
                         config.maxEpochs(), config.maxEpochsNoBest(), config.validateEvery(), config.testEvery(),
-                        config.learningRate()
+                        config.learningRate(), config.temp_show()
                         );
                 optimizer.reset(adm);
                 break;
@@ -264,7 +264,9 @@ int trainerMain(const Configuration &config)
                 optimizer->setLimitHour(config.limitHour());
             std::string infoRows;
             // continue from autosave?
-
+            if (config.saveEvery() == 1) {
+                optimizer->saveEvery(savedir);
+            }
             if (!config.continueFile().empty()) {
                 printf("Restoring state from '%s'... ", config.continueFile().c_str());
                 fflush(stdout);

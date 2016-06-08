@@ -19,7 +19,7 @@
  * You should have received a copy of the GNU General Public License
  * along with CURRENNT.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
-
+// if
 #include "LayerFactory.hpp"
 
 #include "layers/InputLayer.hpp"
@@ -38,10 +38,15 @@
 #include "activation_functions/Logistic.cuh"
 #include "activation_functions/Identity.cuh"
 
+#ifndef NOT75
+  #include "layers/dnnLstmLayer.hpp"
+#endif
+
 #include "rnnlm/intInputLayer.hpp"
 #include "rnnlm/LookupLayer.hpp"
 
 #include <stdexcept>
+#include <type_traits>
 
 
 template <typename TDevice>
@@ -69,8 +74,28 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
 
     else if (layerType == "lstm")
     	return new LstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, false);
+
+#ifndef NOT75
+    else if (layerType == "dnnlstm"){
+			if ( std::is_same<TDevice, Gpu>::value )
+	    	return new dnnLstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, false);
+			else //Cpu
+    		return new LstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, false);
+
+		}
+#endif
+
     else if (layerType == "blstm")
     	return new LstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, true);
+
+#ifndef NOT75
+    else if (layerType == "dnnblstm"){
+			if ( std::is_same<TDevice, Gpu>::value )
+	    	return new dnnLstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, false);
+			else //Cpu
+    		return new LstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, false);
+	  }
+#endif
 
 		// for rnnlm
     else if (layerType == "intinput")
