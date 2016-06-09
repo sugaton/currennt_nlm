@@ -161,8 +161,6 @@ namespace optimizers {
             m_beta2t *= m_beta2;
             ++m_t_;
         }
-        else
-            printf("m_beta**t: %d %f %f\n", m_t_, m_beta1t, m_beta2t);
     }
 
     /**
@@ -221,7 +219,7 @@ namespace optimizers {
                 thrust::copy(this->_UpdateSums()[i].begin(),
                              this->_UpdateSums()[i].end(),
                              this->_curWeightUpdates()[i + N].begin());
-                            //  /*
+                             /*
                 thrust::transform(
                     this->_curWeightUpdates()[i + N].begin(),
                     this->_curWeightUpdates()[i + N].end(),
@@ -263,10 +261,10 @@ namespace optimizers {
 
         std::map<int, int> emb_posi;
         _SumUpdates(emb_posi);
-        for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
-            for (int device = 0; device < this->_numDevice(); ++device){
-                cudaSetDevice(device);
-                int N = this->_layersize() * device;
+        for (int device = 0; device < this->_numDevice(); ++device){
+            cudaSetDevice(device);
+            int N = this->_layersize() * device;
+            for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
                 if (i == 1){
                     layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers(device)[i].get() );
                     int max_length = layer->parallelSequences() * layer->maxSeqLength();
@@ -347,8 +345,6 @@ namespace optimizers {
             m_beta2t *= m_beta2;
             m_t_ += 1;
         }
-        else
-            printf("m_beta**t: %d %f %f\n", m_t_, m_beta1t, m_beta2t);
 
     }
 

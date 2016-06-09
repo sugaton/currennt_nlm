@@ -266,6 +266,9 @@ int trainerMain(const Configuration &config)
             if (config.saveEvery() == 1) {
                 optimizer->saveEvery(savedir);
             }
+            if (config.syncPace() > 0) {
+                optimizer->set_syncPace(config.syncPace());
+            }
             if (!config.continueFile().empty()) {
                 printf("Restoring state from '%s'... ", config.continueFile().c_str());
                 fflush(stdout);

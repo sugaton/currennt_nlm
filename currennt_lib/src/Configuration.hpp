@@ -103,6 +103,7 @@ private:
     int m_max_vocab_size;
     int m_temp_show;
     int m_limithour;
+    int m_sync_pace;
 
     std::string m_networkFile;
     std::string m_trainedNetwork;
@@ -497,6 +498,7 @@ public:
 
     const std::string& tmpBinary() const;
     int limitHour() const;
+    int syncPace() const;
     bool fixedLookup() const;
 };
 

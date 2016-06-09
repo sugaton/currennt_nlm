@@ -155,6 +155,32 @@ namespace optimizers {
 #endif
 
     template <typename TDevice>
+    void lmOptimizer<TDevice>::_resetWeightUpdates()
+    {
+        for (int device = 0; device < m_numDevice; ++device){
+            cudaSetDevice(device);
+            int N = device * m_layer_size;
+            int dummy = 0;
+            {
+                layers::LookupLayer<TDevice> *layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers(device)[1].get());
+                if (!layer || layer->fixed())
+                    dummy = 1;
+                else
+                	thrust::fill(m_curWeightUpdates[N + 1].begin(), m_curWeightUpdates[N + 1].end(), 0.0);
+
+            }
+
+            for (size_t i = 2; i < m_neuralNetwork.layers().size()-1; ++i) {
+                // int N = device * m_layer_size;
+                layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
+                if (!layer)
+                    continue;
+              	thrust::fill(m_curWeightUpdates[N + i].begin(), m_curWeightUpdates[N + i].end(), 0.0);
+            }
+
+        }
+    }
+    template <typename TDevice>
     real_t lmOptimizer<TDevice>::_processDataSet(data_sets::Corpus &ds, bool calcWeightUpdates, real_t *classError)
     {
         // process all data set fractions
@@ -169,8 +195,11 @@ namespace optimizers {
         int parallelSequences = m_neuralNetwork.postOutputLayer().parallelSequences();
 
         int loop_count = 0;
+        int processed_count = 0;
         while (true) {
 
+            if (processed_count == 0)
+                firstFraction = true;
             int status = internal::getMultiFraction(ds, m_numDevice, &fracs);
             if (status == 2) break;
             // compute forward pass and calculate the error
@@ -200,13 +229,22 @@ namespace optimizers {
 
             if (calcWeightUpdates) {
                 // weight noise:
-                std::vector<Cpu::real_vector> origWeights(m_neuralNetwork.layers().size());
+                // std::vector<Cpu::real_vector> origWeights(m_neuralNetwork.layers().size());
                 if (Configuration::instance().weightNoiseSigma() > 0) {
-                    for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
-                        layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers()[i].get());
-                        if (layer) {
-                            origWeights[i] = layer->weights();
-                            layer->injectWeightNoise(Configuration::instance().weightNoiseSigma());
+                    for (int device = 0; device < m_numDevice; ++device){
+                        cudaSetDevice(device);
+                        int N = device * m_layer_size;
+                        for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
+                            layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(m_neuralNetwork.layers(device)[i].get());
+                            if (layer) {
+                                // origWeights[N+i] = layer->weights();
+                                thrust::copy(
+                                    layer->weights().begin(),
+                                    layer->weights().end(),
+                                    origWeights[N + i].begin()
+                                );
+                                layer->injectWeightNoise(Configuration::instance().weightNoiseSigma());
+                            }
                         }
                     }
                 }
@@ -227,7 +265,7 @@ namespace optimizers {
                         layers::LookupLayer<TDevice> *layer = dynamic_cast<layers::LookupLayer<TDevice>*>(m_neuralNetwork.layers(device)[1].get());
                         if (!layer || layer->fixed())
                             dummy = 1;
-                        else if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
+                        else if (!firstFraction && (!Configuration::instance().hybridOnlineBatch() || m_numDevice > 1))
                             thrust::transform(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin(), m_curWeightUpdates[N + 1].begin(), thrust::plus<real_t>());
                         else
                         	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + 1].begin());
@@ -243,14 +281,15 @@ namespace optimizers {
                         if (!layer)
                             continue;
 
-                        if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
+                        // if (!firstFraction && !Configuration::instance().hybridOnlineBatch())
+                        if (!firstFraction && (!Configuration::instance().hybridOnlineBatch() || m_numDevice > 1))
                             thrust::transform(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + i].begin(), m_curWeightUpdates[N + i].begin(), thrust::plus<real_t>());
                         else
                         	thrust::copy(layer->weightUpdates().begin(), layer->weightUpdates().end(), m_curWeightUpdates[N + i].begin());
 
                         // restore old weights before update in case of weight noise
                         if (Configuration::instance().weightNoiseSigma() > 0.0)
-                            thrust::copy(origWeights[i].begin(), origWeights[i].end(), layer->weights().begin());
+                            thrust::copy(origWeights[N + i].begin(), origWeights[N + i].end(), layer->weights().begin());
 
                     }
 
@@ -258,7 +297,15 @@ namespace optimizers {
                 // update weights for hybrid online/batch learning
                 if (Configuration::instance().hybridOnlineBatch()){
                     if (m_numDevice == 1) _updateWeights();
-                    else                  _updateWeightsMultiGpu();
+                    else if (processed_count == m_multi_sync_pace){
+                        _updateWeightsMultiGpu();
+                        processed_count = 0;
+                        //_resetWeightUpdates();
+                    }
+                    else {
+                        ++processed_count;
+
+                    }
                 }
             }
 
@@ -281,7 +328,7 @@ namespace optimizers {
         }
 
         // update weights for batch learning
-        if (calcWeightUpdates && !Configuration::instance().hybridOnlineBatch()){
+        if (calcWeightUpdates && (!Configuration::instance().hybridOnlineBatch() || m_numDevice > 1)){
             if (m_numDevice == 1) _updateWeights();
             else                  _updateWeightsMultiGpu();
         }
@@ -418,7 +465,8 @@ namespace optimizers {
     template <typename TDevice>
     lmOptimizer<TDevice>::lmOptimizer(NeuralNetwork<TDevice> &neuralNetwork, data_sets::Corpus &trainingSet,
                                    data_sets::Corpus &validationSet, data_sets::Corpus &testSet,
-                                   int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery, int temp_show, int limit_hour)
+                                   int maxEpochs, int maxEpochsNoBest, int validateEvery, int testEvery,
+                                   int temp_show, int limit_hour, int multi_sync_pace)
         : m_neuralNetwork             (neuralNetwork)
         , m_trainingSet               (trainingSet)
         , m_validationSet             (validationSet)
@@ -441,7 +489,8 @@ namespace optimizers {
         , m_savedir                   ("")
         , m_saveEvery                 (false)
         , m_tmp_show                  (temp_show)
-        , m_limit_hour                  (limit_hour)
+        , m_limit_hour                (limit_hour)
+        , m_multi_sync_pace           (multi_sync_pace)
     {
         // initialize the best weights vectors
 	m_start_time = std::chrono::system_clock::now();
@@ -451,6 +500,8 @@ namespace optimizers {
         m_UpdateSums.resize(m_neuralNetwork.layers().size());
         m_curWeightUpdates.resize(m_neuralNetwork.layers().size() * m_numDevice);
         m_layer_size = m_neuralNetwork.layers().size();
+        if (Configuration::instance().weightNoiseSigma() > 0)
+            origWeights = std::vector<real_vector>( m_neuralNetwork.layers().size() * m_numDevice);
         for ( int device = 0; device < m_numDevice; ++device){
             cudaSetDevice(device);
             for (size_t i = 1; i < m_neuralNetwork.layers().size()-1; ++i) {
@@ -462,6 +513,8 @@ namespace optimizers {
                         m_UpdateSums[i] = Cpu::real_vector(layer->weights().size());
                     }
                     m_curWeightUpdates[device * m_layer_size + i] = layer->weights();
+                    if (Configuration::instance().weightNoiseSigma() > 0)
+                        origWeights[device * m_layer_size + i] = layer->weights();
                 }
                 else{
                     if (i != 1) continue;
@@ -496,6 +549,12 @@ namespace optimizers {
             }
         }
         m_curWeightUpdates.clear();
+    }
+
+    template <typename TDevice>
+    bool lmOptimizer<TDevice>::set_syncPace(int pace)
+    {
+        m_multi_sync_pace = pace;
     }
 
     template <typename TDevice>

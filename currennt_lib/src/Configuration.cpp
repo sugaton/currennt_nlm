@@ -28,8 +28,6 @@
 #include <fstream>
 #include <sstream>
 
-#include <mpi.h>
-
 #include <boost/program_options.hpp>
 #include <boost/filesystem.hpp>
 #include <boost/random/random_device.hpp>
@@ -107,7 +105,7 @@ Configuration::Configuration(int argc, const char *argv[])
         throw std::runtime_error("Static instance of class Configuration already created");
     else
         ms_instance = this;
-    
+
 
     std::string optionsFile;
     std::string optimizerString;
@@ -164,6 +162,7 @@ Configuration::Configuration(int argc, const char *argv[])
         ("temporal_show",        po::value(&m_temp_show)   ->default_value(-1), "sets the maximum number of words that can be stored in LookupLayer")
         ("fixedLookup",        po::value(&m_fixlookup)   ->default_value(false), "if this is true, system don't update input embeddings")
         ("limit_hour",        po::value(&m_limithour)   ->default_value(-1), "specify maximum learning time")
+        ("sync_pace",        po::value(&m_sync_pace)   ->default_value(-1), "specify maximum learning time")
         ;
 
     po::options_description autosaveOptions("Autosave options");
@@ -693,4 +692,9 @@ const std::string& Configuration::tmpBinary() const
 int Configuration::limitHour() const
 {
     return m_limithour;
+}
+
+int Configuration::syncPace() const
+{
+    return m_sync_pace;
 }
