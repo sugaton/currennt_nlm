@@ -68,21 +68,24 @@ namespace optimizers {
         int    m_tmp_show;
         int    m_limit_hour;
 
+        int    m_multi_sync_pace;
+
         std::string m_savedir;
         bool m_saveEvery;
 
         time_point m_start_time;
-
         std::vector<real_vector> m_curWeightUpdates;
         std::vector<Cpu::real_vector> m_allWeightUpdates;
         std::vector<Cpu::real_vector> m_UpdateSums;
+        std::vector<real_vector> origWeights;
         std::vector<real_vector> m_bestWeights;
 
     private:
         real_t _processDataSet(data_sets::Corpus &ds, bool calcWeightUpdates, real_t *classError);
         void _storeWeights();
         void _restoreWeights();
-#ifdef _MYMPI
+        void _resetWeightUpdates();
+#ifdef MPI
         void _syncWeight();
 #endif
 
@@ -122,7 +125,8 @@ namespace optimizers {
             int validateEvery,
             int testEvery,
             int temp_show = -1,
-            int limit_hour = 900
+            int limit_hour = 900,
+            int multi_sync_pace = 30
             );
 
         /**
@@ -130,6 +134,7 @@ namespace optimizers {
          */
         virtual ~lmOptimizer();
 
+        bool set_syncPace(int pace);
 
         /**
          * set flag of using entropy-error on.
@@ -239,4 +244,3 @@ namespace optimizers {
 
 
 #endif // OPTIMIZERS_OPTIMIZER_HPP
-
