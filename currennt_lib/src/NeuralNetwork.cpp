@@ -224,34 +224,39 @@ void NeuralNetwork<TDevice>::loadSequences(const data_sets::DataSetFraction &fra
 }
 
 template <typename TDevice>
-void NeuralNetwork<TDevice>::computeForwardPass()
+void NeuralNetwork<TDevice>::computeForwardPass(int dev)
 {
-    // for (int i = 0; i < m_layers.at(0).size(); ++i){
+    if (dev >= 0) {
+        // this block is called from threading version of \
+        // lmOptimizer::_processDataset()
+        BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers[dev]) {
+            layer->computeForwardPass();
+        }
+        return;
+    }
     for (size_t device = 0; device < m_layers.size(); ++device){
         cudaSetDevice(device);
         BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers[device]) {
-        // for (size_t device = 0; device < m_layers.size(); ++device){
-        //     cudaSetDevice(device);
-            // boost::shared_ptr<layers::Layer<TDevice> > &layer = m_layers.at(device).at(i);
             layer->computeForwardPass();
         }
     }
 }
 
 template <typename TDevice>
-void NeuralNetwork<TDevice>::computeBackwardPass()
+void NeuralNetwork<TDevice>::computeBackwardPass(int dev)
 {
+    if (dev >= 0) {
+        // this block is called from threading version of \
+        // lmOptimizer::_processDataset()
+        BOOST_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers[dev]) {
+            layer->computeBackwardPass();
+        }
+        return;
+    }
     for (size_t device = 0; device < m_layers.size(); ++device){
         cudaSetDevice(device);
         BOOST_REVERSE_FOREACH (boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers[device]) {
-    // for (int i = 0; i < m_layers.at(0).size(); ++i){
-        // for (size_t device = 0; device < m_layers.size(); ++device){
-            // cudaSetDevice(device);
-            // boost::shared_ptr<layers::Layer<TDevice> > &layer = m_layers.at(device).at(i);
             layer->computeBackwardPass();
-        //std::cout << "output errors " << layer->name() << std::endl;
-        //thrust::copy(layer->outputErrors().begin(), layer->outputErrors().end(), std::ostream_iterator<real_t>(std::cout, ";"));
-        //std::cout << std::endl;
         }
     }
 }
@@ -339,8 +344,11 @@ void NeuralNetwork<TDevice>::exportWeightsBinary(const std::string &dirname) con
             trainableLayer->exportWeightsBinary(dirname);
         else{
         	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(layer.get());
-            if (lookup)
+            if (lookup) {
+                if (lookup->fixed())
+                    continue;
                 lookup->exportWeightsBinary(dirname);
+            }
         }
     }
 }
@@ -359,8 +367,11 @@ void NeuralNetwork<TDevice>::importWeightsBinary(const std::string &dirname)
                 trainableLayer->importWeightsBinary(dirname);
             else{
             	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(layer.get());
-                if (lookup)
+                if (lookup) {
+                    if (lookup->fixed())
+                        continue;
                     lookup->importWeightsBinary(dirname);
+                }
             }
         }
     }

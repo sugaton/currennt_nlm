@@ -26,6 +26,8 @@
 #include "../NeuralNetwork.hpp"
 #include "../corpus/Corpus.hpp"
 #include <chrono>
+#include <thread>
+#include <mutex>
 
 
 namespace optimizers {
@@ -46,6 +48,7 @@ namespace optimizers {
         data_sets::Corpus     &m_trainingSet;
         data_sets::Corpus     &m_validationSet;
         data_sets::Corpus     &m_testSet;
+        std::vector<std::shared_ptr<data_sets::Corpus>> m_devided_trainingset;
 
         const int m_maxEpochs;
         const int m_maxEpochsNoBest;
@@ -73,6 +76,8 @@ namespace optimizers {
         std::string m_savedir;
         bool m_saveEvery;
 
+        std::mutex get_frac_mtx;
+
         time_point m_start_time;
         std::vector<real_vector> m_curWeightUpdates;
         std::vector<Cpu::real_vector> m_allWeightUpdates;
@@ -82,8 +87,11 @@ namespace optimizers {
 
     private:
         real_t _processDataSet(data_sets::Corpus &ds, bool calcWeightUpdates, real_t *classError);
+        void _processDataSet_apl(data_sets::Corpus &ds, bool calcWeightUpdates, real_t *error, real_t *classError, int device, int* _status);
+        real_t _processDataSet_thread(data_sets::Corpus &ds, bool calcWeightUpdates, real_t *classError);
         void _storeWeights();
         void _restoreWeights();
+        void _syncWeight_multiGpu();
         void _resetWeightUpdates();
 #ifdef MPI
         void _syncWeight();
@@ -98,7 +106,7 @@ namespace optimizers {
         std::vector<Cpu::real_vector>& _allWeightUpdates();
         int _layersize();
         int _numDevice();
-        virtual void _updateWeights() =0;
+        virtual void _updateWeights(int device = 0) =0;
         virtual void _updateWeightsMultiGpu() =0;
 
     public:
@@ -134,7 +142,7 @@ namespace optimizers {
          */
         virtual ~lmOptimizer();
 
-        bool set_syncPace(int pace);
+        void set_syncPace(int pace);
 
         /**
          * set flag of using entropy-error on.
@@ -238,6 +246,8 @@ namespace optimizers {
         virtual void importState(const helpers::JsonDocument &jsonDoc);
 
         void setLimitHour(int limit_hour);
+
+        void divide_trainingset();
     };
 
 } // namespace optimizers

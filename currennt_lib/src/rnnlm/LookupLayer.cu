@@ -123,7 +123,7 @@ namespace layers {
         , m_allowCpuEmb            (false)
     {
 
-        Cpu::real_vector weights;
+        Cpu::real_vector weights = Cpu::real_vector();
         // m_wdict = std::map<std::string, int>();
 
         m_maximum_gpusize = (layerChild->HasMember("max_gpusize"))? static_cast<int>((*layerChild)["max_gpusize"].GetInt()) : INT_MAX;
@@ -188,22 +188,20 @@ namespace layers {
         }
         // create random weights if no weights are given in the network file
         else {
-
             weights.resize(this->size());
 
-            if (config.weightsDistributionType() == Configuration::DISTRIBUTION_UNIFORM) {
-                real_t range = config.weightsDistributionUniformMax() - config.weightsDistributionUniformMin();
-                boost::random::uniform_real_distribution<real_t> dist(0, range);
-                for (size_t i = 0; i < weights.size(); ++i)
-                    weights[i] = dist(*gen) + config.weightsDistributionUniformMin();
-            }
-            else {
-                for (int c = 0; c < m_wsize; ++c){
+            for (int c = 0; c < m_wsize; ++c){
+                if (config.weightsDistributionType() == Configuration::DISTRIBUTION_UNIFORM) {
+                    real_t range = config.weightsDistributionUniformMax() - config.weightsDistributionUniformMin();
+                    boost::random::uniform_real_distribution<real_t> dist(0, range);
+                    for (size_t i = 0; i < weights.size(); ++i)
+                        weights[i] = dist(*gen) + config.weightsDistributionUniformMin();
+                }
+                else {
                     for (size_t i = 0; i < this->size(); ++i)
                         weights[i] = dist(*gen);
-                    _AddEmbedding(weights, c, m_maximum_gpusize);
                 }
-
+                _AddEmbedding(weights, c, m_maximum_gpusize);
             }
         }
         m_weightUpdates = real_vector(this->parallelSequences() * this->maxSeqLength() * this->size());
@@ -329,8 +327,8 @@ namespace layers {
         std::getline(ifs, line);
         sscanf(line.data(), "%lld %d", &wordnum, &size);
 
-        Cpu::real_vector vec;
-        real_vector Dvec;
+        Cpu::real_vector vec = Cpu::real_vector();
+        real_vector Dvec = real_vector();
         vec.resize(size);
         Dvec.resize(size);
 
@@ -347,6 +345,7 @@ namespace layers {
             //copying to device (this is needed if TDevice==GPU)
             thrust::copy(vec.begin(), vec.end(), Dvec.begin());
             // replace embedding
+
             m_embeddings[it->second]->replace(&Dvec);
         }
     }
@@ -507,6 +506,8 @@ namespace layers {
         real_t item;
         vh.resize(d);
         vd.resize(d);
+        printf("m_embeddings:%d N:%d\n", m_embeddings.size(), N);
+        printf("size:%d d:%d\n", this->size(), d);
         for (size_t j = 0; j < N; ++j) {
             for (int i = 0; i < this->size(); ++i) {
                 ifs.read((char*) &item, sizeof(real_t));

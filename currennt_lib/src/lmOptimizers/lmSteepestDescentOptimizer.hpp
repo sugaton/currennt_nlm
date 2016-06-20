@@ -49,7 +49,7 @@ namespace optimizers {
         std::vector<real_vector> m_weightDeltas;
 
     protected:
-        virtual void _updateWeights();
+        virtual void _updateWeights(int device = 0);
         virtual void _updateWeightsMultiGpu();
         void _SumUpdates(std::map<int, int> &emb_posi);
 

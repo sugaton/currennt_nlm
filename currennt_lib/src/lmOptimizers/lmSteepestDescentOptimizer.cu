@@ -83,7 +83,7 @@ namespace {
 namespace optimizers {
 
     template <typename TDevice>
-    void lmSteepestDescentOptimizer<TDevice>::_updateWeights()
+    void lmSteepestDescentOptimizer<TDevice>::_updateWeights(int device)
     {
         internal::UpdateWeightFn updateWeightFn;
         updateWeightFn.momentum     = m_momentum;

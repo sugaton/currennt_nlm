@@ -273,6 +273,7 @@ namespace layers {
         std::ifstream ifs(filename, std::ios_base::binary);
         size_t size;
         real_t item;
+        printf("%s: %d\n", __FILE__, __LINE__);
         ifs.read((char*) &size, sizeof(size_t));
         // ifs >> size;
         assert( size == m_weights.size() );

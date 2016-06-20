@@ -82,11 +82,13 @@ namespace {
 
 namespace optimizers {
 
+
     template <typename TDevice>
-    void Adam<TDevice>::_updateWeights()
+    void Adam<TDevice>::_updateWeights(int device)
     {
         internal::UpdateWeightFn updateWeightFn;
-
+        // int N = device *
+        int N = this->_layersize() * device;
         updateWeightFn.beta1         = m_beta1;
         updateWeightFn.beta2         = m_beta2;
         updateWeightFn.eps           = m_eps;
@@ -95,7 +97,7 @@ namespace optimizers {
 
         for (size_t i = 1; i < this->_neuralNetwork().layers().size()-1; ++i) {
             if (i == 1){
-                layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers()[i].get() );
+                layers::LookupLayer<TDevice> *layer =  dynamic_cast<layers::LookupLayer<TDevice>*>( this->_neuralNetwork().layers(device)[i].get() );
                 if (layer->type() != "lookup")
                     continue;
                 if (layer->fixed())
@@ -129,7 +131,7 @@ namespace optimizers {
                 continue;
             }
 
-          	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(this->_neuralNetwork().layers()[i].get());
+          	layers::TrainableLayer<TDevice> *layer = dynamic_cast<layers::TrainableLayer<TDevice>*>(this->_neuralNetwork().layers(device)[i].get());
             if (!layer)
                 continue;
 
@@ -144,10 +146,10 @@ namespace optimizers {
 
             updateWeightFn.beta1t        = m_beta1t;
             updateWeightFn.beta2t        = m_beta2t;
-            updateWeightFn.m             = m_moment[0] + m_MStart[i]; //pointer
-            updateWeightFn.v             = m_second_moment[0] + m_MStart[i]; //pointer
+            updateWeightFn.m             = m_moment[device] + m_MStart[i]; //pointer
+            updateWeightFn.v             = m_second_moment[device] + m_MStart[i]; //pointer
             updateWeightFn.theta         = helpers::getRawPointer(layer->weights());
-            updateWeightFn.g             = helpers::getRawPointer(this->_curWeightUpdates()[i]);
+            updateWeightFn.g             = helpers::getRawPointer(this->_curWeightUpdates()[i + N]);
 
             thrust::transform(
                 thrust::counting_iterator<int>(0),

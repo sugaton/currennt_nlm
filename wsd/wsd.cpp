@@ -58,9 +58,15 @@
 #include <eigen3/Eigen/Dense>
 #include <eigen3/unsupported/Eigen/MatrixFunctions>
 
+
+#include <cereal/types/unordered_map.hpp>
+#include <cereal/types/string.hpp>
+#include <cereal/archives/binary.hpp>
+
 #include <fstream>
 #include <stdexcept>
 #include <tuple>
+#include <utility>
 #include <algorithm>
 #include <algorithm>
 #include <stdarg.h>
@@ -70,6 +76,8 @@
 #include <cfloat>
 #include <iomanip>
 
+
+// #define SHOW
 
 void swap32 (uint32_t *p)
 {
@@ -122,10 +130,12 @@ void createModifiedTrainingSet(data_sets::Corpus *trainingSet, int parallelSeque
 template <typename TDevice> void saveState(const NeuralNetwork<TDevice> &nn, const optimizers::lmOptimizer<TDevice> &optimizer, const std::string &infoRows);
 template <typename TDevice> void restoreState(NeuralNetwork<TDevice> *nn, optimizers::lmOptimizer<TDevice> *optimizer, std::string *infoRows);
 std::string printfRow(const char *format, ...);
+void importDictBinary(std::unordered_map<std::string, int> &m, std::string &fname);
 void loadLexemes(const std::string& filename,
                  std::unordered_map< std::string, std::vector<std::string> >& word_synsets,
                  std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb);
 void readLine(std::string line, std::vector<std::string>& words, std::vector<POS_type_t>& pos);
+void readLine_(std::string line, std::vector<std::string>& words);
 void makeFrac(const std::vector<std::string>& words,
               const std::unordered_map<std::string, int>& dic,
               boost::shared_ptr<data_sets::CorpusFraction> frac,
@@ -135,7 +145,9 @@ std::string wsd(const std::string& word,
                 const POS_type_t& pos,
                 const std::vector<std::string>& synsets,
                 Cpu::real_vector& output,
-                const std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb);
+                const std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb,
+                double thr = 0.0,
+                int *wsd_count = NULL);
 
 // main function
 template <typename TDevice>
@@ -148,11 +160,20 @@ int trainerMain(const Configuration &config)
         printf("Reading network from '%s'... ", networkFile.c_str());
         fflush(stdout);
         rapidjson::Document netDoc;
+        std::string importdir = config.importDir();
         readJsonFile(&netDoc, networkFile);
         printf("done.\n");
         printf("\n");
         std::unordered_map<std::string, int> _wordDict;
-        loadDict(&netDoc, &_wordDict);
+        std::unordered_map<std::string, int> _wordDict2;
+        // loadDict(&netDoc, &_wordDict);
+
+        if (importdir != "") {
+            std::string fname = importdir + "/wdict.cereal";
+            importDictBinary(_wordDict, fname);
+        }
+
+        _wordDict2 = _wordDict;
 
         // load data sets
         boost::shared_ptr<data_sets::Corpus> trainingSet    = boost::make_shared<data_sets::Corpus>();
@@ -161,7 +182,11 @@ int trainerMain(const Configuration &config)
         boost::shared_ptr<data_sets::Corpus> feedForwardSet = boost::make_shared<data_sets::Corpus>();
 
 
-        testSet = loadDataSet(DATA_SET_TEST, config.max_vocab_size(), &_wordDict, 0);
+        // calculate
+        if (!config.validationFiles().empty())
+            testSet = loadDataSet(DATA_SET_VALIDATION, config.max_vocab_size(), &_wordDict2, 0);
+        else// wsd
+            testSet = loadDataSet(DATA_SET_TEST, config.max_vocab_size(), &_wordDict2, 1);
         // calculate the maximum sequence length
         int maxSeqLength;
         maxSeqLength = testSet->maxSeqLength();
@@ -185,17 +210,32 @@ int trainerMain(const Configuration &config)
         int inputSize = -1;
         int outputSize = -1;
         inputSize = testSet->inputPatternSize();
-        outputSize = testSet->outputPatternSize();
-        int vocab_size = (int)_wordDict.size();
+        outputSize = _wordDict.size();
+        // int vocab_size = (int)_wordDict.size();
+        int vocab_size = (int)_wordDict2.size();
+        printf("vocab_size:%d\n", vocab_size);
         // if (config.max_vocab_size() != -1 && config.max_vocab_size() < outputSize)
         //     outputSize = config.max_vocab_size();
 
         NeuralNetwork<TDevice> neuralNetwork(netDoc, parallelSequences, maxSeqLength, inputSize, outputSize, vocab_size, config.devices());
-        neuralNetwork.setWordDict(&_wordDict);
+        // neuralNetwork.setWordDict(&_wordDict);
+        neuralNetwork.setWordDict(&_wordDict2);
+
+
+        // if (config.fixedLookup())
+        neuralNetwork.fixLookup();
+
+        printf("done.\n");
+        printf("loading layers weights... ");
+        fflush(stdout);
+
+        if (importdir != "")
+            neuralNetwork.importWeightsBinary(importdir);
+        printf("done.\n");
+
         if (config.pretrainedEmbeddings() != "")
             neuralNetwork.loadEmbeddings(config.pretrainedEmbeddings());
 
-        printf("done.\n");
         printf("Layers:\n");
         printLayers(neuralNetwork);
         printf("\n");
@@ -209,6 +249,41 @@ int trainerMain(const Configuration &config)
 
         printf("\n");
 
+        if (!config.validationFiles().empty()) {
+            int fracIdx = 0;
+            boost::shared_ptr<data_sets::CorpusFraction> frac;
+            real_t error, cross_entropy;
+            real_t average_error = 0.0;
+            int c = 0;
+            std::ifstream ifs(Configuration::instance().validationFiles()[0]);
+            std::ofstream ofs(Configuration::instance().wsdResult());
+                // /*
+            std::string line, word, wsd_result;
+            std::vector<std::string> words = std::vector<std::string>();
+            std::vector<int> words_len = std::vector<int>();
+            while( std::getline(ifs, line) ){
+                // boost::shared_ptr<data_sets::CorpusFraction> frac = testSet->getNewFrac();
+                readLine_(line, words);
+                words_len.push_back(words.size());
+            }
+                // makeFrac(words, _wordDict2, frac, outputSize);
+                // */
+
+            while (((frac = testSet->getNextFraction()))) {
+
+                neuralNetwork.loadSequences(*frac);
+                neuralNetwork.computeForwardPass();
+                cross_entropy = neuralNetwork.calculateError() / words_len[c]; // / words.size();
+                error = std::pow(2, cross_entropy);
+                ofs << error << std::endl;
+                average_error += error;
+                ++c;
+            }
+            average_error /= c;
+            ofs << "average: " << average_error << std::endl;
+            return 0;
+        }
+
         // process all data set fractions
         int fracIdx = 0;
         printf("open test-file and output-result-file\n");
@@ -221,16 +296,21 @@ int trainerMain(const Configuration &config)
         // std::vector<int> POS;
         int d = (int)(lexeme_emb.begin()->second)->size();
         Cpu::real_vector output_;
+        double thr = config.wsd_threshold();
         output_.reserve(d);
         typename TDevice::real_vector outputs;
         printf("start wsd\n");
+        int cand = 0;
+        int cand_sum = 0;
+        double cand_average = 0;
+        int did_wsd = 0;
         while (std::getline(ifs, line)) {
             // printf("Computing outputs for data fraction %d...", ++fracIdx);
             // fflush(stdout);
             boost::shared_ptr<data_sets::CorpusFraction> frac = testSet->getNewFrac();
             readLine(line, words, pos);
             // printf("make Fraction\n");
-            makeFrac(words, _wordDict, frac, outputSize);
+            makeFrac(words, _wordDict2, frac, outputSize);
             // compute the forward pass for the current data fraction and extract the outputs
             // printf("compute forward\n");
             neuralNetwork.loadSequences(*frac);
@@ -251,8 +331,14 @@ int trainerMain(const Configuration &config)
                     wsd_result = word;
                 else if (_p == POS_OTHER)
                     wsd_result = word;
-                else
-                    wsd_result = wsd(word, _p, word_synsets[word], output_, lexeme_emb);
+                else {
+                    wsd_result = wsd(word, _p, word_synsets[word], output_, lexeme_emb, thr, &cand);
+                    if (cand != 0) {
+                        cand_sum += cand;
+                        did_wsd += 1;
+                        cand = 0;
+                    }
+                }
                 std::cout << "word: " << word << " || result: " << wsd_result << std::endl;
                 ofs << wsd_result << " ";
             }
@@ -260,7 +346,10 @@ int trainerMain(const Configuration &config)
 
             // printf(" done.\n");
         }
+        cand_average = (double)cand_sum / (double)did_wsd;
         // boost::filesystem::remove(feedForwardSet->cacheFileName());
+        std::cout << "the average of the number of candidate included in disambiguated word : " << cand_average << " (";
+        std::cout <<  cand_sum << ", " << did_wsd << " )" << std::endl;
     }
     catch (const std::exception &e) {
         printf("FAILED: %s\n", e.what());
@@ -471,6 +560,12 @@ void printOptimizer(const Configuration &config, const optimizers::lmOptimizer<T
     }
 }
 
+void importDictBinary(std::unordered_map<std::string, int> &m, std::string &fname)
+{
+    std::ifstream ifs(fname, std::ios::binary);
+    cereal::BinaryInputArchive archive(ifs);
+    archive(m);
+}
 
 template <typename TDevice>
 void saveNetwork(const NeuralNetwork<TDevice> &nn, const std::string &filename)
@@ -675,6 +770,7 @@ POS_type_t getPOStype(std::string postype)
 void readLine(std::string line, std::vector<std::string>& words, std::vector<POS_type_t>& pos)
 {
     words.clear();
+    pos.clear();
     std::stringstream ss(line);
     std::string word, item;
     POS_type_t postag;
@@ -689,6 +785,17 @@ void readLine(std::string line, std::vector<std::string>& words, std::vector<POS
     }
 }
 
+void readLine_(std::string line, std::vector<std::string>& words)
+{
+    words.clear();
+    std::stringstream ss(line);
+    std::string word, item;
+    while (std::getline(ss, word, ' ')) {
+        // std::stringstream lempos(word);
+        // std::getline(lempos, item, '@');
+        words.push_back(word);
+    }
+}
 void makeInput(const std::vector<std::string>& words,
               const std::unordered_map<std::string, int>& dic,
               Cpu::int_vector *input)
@@ -714,7 +821,7 @@ void makeFrac(const std::vector<std::string>& words,
     int context_length = context_left + context_right + 1;
     int output_lag = Configuration::instance().outputTimeLag();
 
-    printf("setting fraction\n");
+    // printf("setting fraction\n");
     frac->use_intInput();
     frac->set_inputPatternSize(context_length);
     // frac->m_outputPatternSize = m_outputPatternSize;
@@ -741,11 +848,11 @@ void makeFrac(const std::vector<std::string>& words,
     frac->vectorResize(1, 0, -1);
 
     // inputs
-    printf("make input\n");
+    // printf("make input\n");
     Cpu::int_vector input = Cpu::int_vector();
     makeInput(words, dic, &input);
 
-    printf("place vector to memory\n");
+    // printf("place vector to memory\n");
     for (int timestep = 0; timestep < words.size(); ++timestep) {
         int offset_out = 0;
         for (int offset_in = -context_left; offset_in <= context_right; ++offset_in) {
@@ -886,6 +993,7 @@ std::tuple<std::string, POS_type_t> getLexemeSynset(std::string word, std::strin
                 p = ADJ;
                 break;
         }
+        // printf("synset, pos:%s %d\n", s.c_str(), p);
         return std::make_tuple(s, p);
     }
     return std::make_tuple("", p);
@@ -896,104 +1004,120 @@ std::string wsd(const std::string& word,
                 const POS_type_t& pos,
                 const std::vector<std::string>& synsets,
                 Cpu::real_vector& output,
-                const std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb)
+                const std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb,
+                double thr,
+                int *count_wsd)
 {
 
     // Cpu::real_vector W;
     int d = lexeme_emb.begin()->second->size();
 
     int num_syn = synsets.size();
-    // Eigen::Matrix<real_t, num_syn, d, ColMajor> W_;
-    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> W_(num_syn, d);
-    // Eigen::MatrixXd W_(num_syn, d);
-    // W.resize(num_syn * d);
-    // int i = 0;
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> W_ = Eigen::MatrixXd::Zero(num_syn, d);
+    int i = 0;
     for (auto lex : synsets) {
-        // thrust::copy(lexeme_emb[lex]->begin(), d, W.begin() + i * d);
         auto embit = lexeme_emb.find(lex);
 
         if (embit == lexeme_emb.end()) {
-
             for ( int j = 0; j < d; ++j)
-                // W_ << 0.0f;
-                W_ << 0.0;
+                W_(i * num_syn + j) = 0.0;
             continue;
         }
 
         for ( int j = 0; j < d; ++j) {
-            W_ << (double)(*(embit->second))[j];
+            W_(i * num_syn + j) = (double)(*(embit->second))[j];
 
         }
-        // ++i;
+        ++i;
     }
-    // std::cout << std::endl;
-    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> h(d, 1);
-    // Eigen::MatrixXd h(d, 1);
-    // Eigen::Matrix<double, d, 1, ColMajor> h;
-    for (int j = 0; j < d; ++j)
-        h << (double)output[j];
 
-    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> result(num_syn, 1);
-    // Eigen::MatrixX result(num_syn, 1);
-    // Eigen::Matrix<float, num_syn, 1, ColMajor> result;
-
-
-    /*
-    printf("calculate score \n");
-    printf("size: numsyn:%d  d:%d\n", num_syn, d);
+#ifdef SHOW
     printf("W_:\n");
-    std::cout << W_ << std::endl;
-    printf("h:\n");
-    std::cout << h << std::endl;
-    */
+
+#endif//#ifdef SHOW
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> h = Eigen::MatrixXd::Zero(d, 1);
+    for (int j = 0; j < d; ++j)
+        h(j) = (double)output[j];
+
+    Eigen::Matrix<double, Eigen::Dynamic, Eigen::Dynamic> result = Eigen::MatrixXd::Zero(num_syn, 1);
+
 
     //check nan
+#ifdef SHOW
     assert( !nanCheck(W_, d) );
-
     if (nanCheck(h, d)) {
         printf("hidden layer has nan, skipping this word\n");
         return word;
     }
-
+#endif
 
     result = W_ * h;
 
+#ifdef SHOW
     if (nanCheck(result, num_syn)) {
         printf("scores has nan, skipping this word\n");
         return word;
     }
-
     printf("result:\n");
     std::cout << result << std::endl;
 
     checkinf(result, num_syn);
+#endif//#ifdef SHOW
 
     logSoftmax(result, num_syn);
 
+#ifdef SHOW
     printf("result:\n");
     std::cout << result << std::endl;
+#endif//#ifdef SHOW
 
-    double max = -DBL_MAX;
+    double _max = -DBL_MAX;
+    double max2 = -DBL_MAX;
     int maxarg = -1;
     std::string max_syn;
 
     std::string syn;
     POS_type_t pos_;
     int counting = 0;
+    std::vector<std::pair<double, std::string>> scores = std::vector<std::pair<double, std::string>>();
+    scores.reserve(num_syn);
     for (int i = 0; i < num_syn; ++i) {
         std::tie(syn, pos_) = getLexemeSynset(word, synsets[i]);
+        // printf("syn, pos1, pos2: %s %d %d\n", syn.c_str(), pos, pos_);
         if (pos != pos_) continue;
         ++counting;
-        if (max < result(i)) {
-            max = result(i);
+        scores.push_back(std::make_pair(result(i), syn));
+        /*
+        if (_max < result(i)) {
+            max2 = _max;
+            _max = result(i);
             max_syn = syn;
             maxarg = i;
         }
+        else if(max2 < result(i)) {
+            max2 = result(i);
+        }*/
     }
-    assert(maxarg != -1 || counting == 0);
-    // return synsets[maxarg];
     if (counting == 0)
         return word;
-    return max_syn;
+    std::sort(scores.begin(), scores.end(), [](const std::pair<double, std::string>& a, const std::pair<double, std::string>& b){return a.first > b.first;});
+    // assert(maxarg != -1 || counting == 0);
+    // return synsets[maxarg];
+    *count_wsd = 0;
+
+    max_syn = scores.at(0).second;
+    _max = scores.at(0).first;
+    if (counting > 1)
+        max2 = scores.at(1).first;
+#ifdef SHOW
+    printf("max, max2 , counting: %lf %1.4lf %d\n", _max, max2, counting);
+#endif//#ifdef SHOW
+
+    if (thr < (_max - max2)) {
+        *count_wsd = counting;
+        return max_syn;
+    }
+    else
+        return word;
 
 }

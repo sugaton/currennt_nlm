@@ -108,14 +108,14 @@ public:
     /**
      * Computes the forward pass
      */
-    void computeForwardPass();
+    void computeForwardPass(int dev = -1);
 
     /**
      * Computes the backward pass, including the weight updates
      *
      * The forward pass must be computed first!
      */
-    void computeBackwardPass();
+    void computeBackwardPass(int dev = -1);
 
     /**
      * Calculates the error at the output layer

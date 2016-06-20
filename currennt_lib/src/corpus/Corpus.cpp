@@ -273,6 +273,7 @@ namespace data_sets {
 
     Cpu::int_vector Corpus::_loadInputsFromCache(const sequence_t &seq)
     {
+        // std::lock_guard<std::mutex> lock(_load_inputs_mtx);
         Cpu::int_vector v(seq.length * m_inputPatternSize);
 
         m_cacheFile.seekg(seq.inputsBegin);
@@ -284,6 +285,7 @@ namespace data_sets {
 
     Cpu::real_vector Corpus::_loadOutputsFromCache(const sequence_t &seq)
     {
+        // std::lock_guard<std::mutex> lock(_load_outputs_mtx);
         Cpu::real_vector v(seq.length * m_outputPatternSize);
 
         m_cacheFile.seekg(seq.targetsBegin);
@@ -295,6 +297,7 @@ namespace data_sets {
 
     Cpu::int_vector Corpus::_loadTargetClassesFromCache(const sequence_t &seq)
     {
+        // std::lock_guard<std::mutex> lock(_load_targets_mtx);
         Cpu::int_vector v(seq.length);
 
         m_cacheFile.seekg(seq.targetsBegin);
@@ -543,6 +546,61 @@ namespace data_sets {
     {
     }
 
+
+    // this constructor copy class object but divide m_sequences by threadNum.
+    Corpus::Corpus(Corpus& corpus, int pid, int threadNum)
+        : m_fractionShuffling(corpus.m_fractionShuffling)
+        , m_sequenceShuffling(corpus.m_sequenceShuffling)
+        , m_isClassificationData(corpus.m_isClassificationData)
+        , m_noiseDeviation (corpus.m_noiseDeviation)
+        , m_parallelSequences (corpus.m_parallelSequences)
+        , m_totalSequences (corpus.m_totalSequences)
+        , m_totalTimesteps (corpus.m_totalTimesteps)
+        , m_minSeqLength (corpus.m_minSeqLength)
+        , m_maxSeqLength (corpus.m_maxSeqLength)
+        , m_inputPatternSize (corpus.m_inputPatternSize)
+        , m_outputPatternSize (corpus.m_outputPatternSize)
+        , m_appearing_threshold (corpus.m_appearing_threshold)
+        , m_curFirstSeqIdx   (-1)
+        , m_max_vocab_size (corpus.m_max_vocab_size)
+        // , m_cacheFile (corpus.m_cacheFile)
+        // ,m_sequences (corpus.m_sequences)
+        // boost::scoped_ptr<thread_data_t> m_threadData; // just because nvcc hates boost headers
+        ,m_wordids (corpus.m_wordids)
+        , m_fixed_wordDict (corpus.m_fixed_wordDict)
+        ,m_nextid (corpus.m_nextid)
+
+        // : Corpus(corpus)
+    {
+        // create next fraction data and start the thread
+        // copying cacheFile to another cacheFile
+printf("%s : %d\n", __FILE__, __LINE__);
+        m_cacheFileName = corpus.copy();
+        m_cacheFile.open(m_cacheFileName.c_str(), std::fstream::in | std::fstream::out | std::fstream::binary | std::fstream::trunc);
+printf("%s : %d\n", __FILE__, __LINE__);
+        //
+        std::vector<sequence_t> sequences;
+        sequences.reserve(corpus.m_sequences.size() / threadNum + 1);
+printf("%s : %d\n", __FILE__, __LINE__);
+        int i = pid;
+        for (auto seq : corpus.m_sequences) {
+            if (i % threadNum == 0)
+                sequences.push_back(seq);
+            ++i;
+        }
+printf("%s : %d\n", __FILE__, __LINE__);
+        m_sequences = std::vector<sequence_t>();
+printf("%s : %d\n", __FILE__, __LINE__);
+        m_sequences.resize(sequences.size());
+        std::copy(sequences.begin(), sequences.end(), m_sequences.begin());
+
+printf("%s : %d\n", __FILE__, __LINE__);
+        m_threadData.reset(new thread_data_t);
+        m_threadData->finished  = false;
+        m_threadData->terminate = false;
+        m_threadData->thread    = boost::thread(&Corpus::_nextFracThreadFn, this);
+    }
+
     Corpus::Corpus(const std::vector<std::string> &txtfiles, int parSeq, real_t fraction, int truncSeqLength, bool fracShuf, bool seqShuf, real_t noiseDev,
                    std::string cachePath, std::unordered_map<std::string, int>* wordids, int constructDict, int max_vocab_size, int appearing_threshold)
         : m_fractionShuffling(fracShuf)
@@ -654,19 +712,18 @@ namespace data_sets {
             if (first_file) {
                 m_outputMeans  = Cpu::real_vector(m_outputPatternSize, 0.0f);
                 m_outputStdevs = Cpu::real_vector(m_outputPatternSize, 1.0f);
-                // }
             }
-
-            // create next fraction data and start the thread
-            m_threadData.reset(new thread_data_t);
-            m_threadData->finished  = false;
-            m_threadData->terminate = false;
-            m_threadData->thread    = boost::thread(&Corpus::_nextFracThreadFn, this);
 
             m_sequences.insert(m_sequences.end(), sequences.begin(), sequences.end());
 
             first_file = false;
         } // txt file loop
+
+        // create next fraction data and start the thread
+        m_threadData.reset(new thread_data_t);
+        m_threadData->finished  = false;
+        m_threadData->terminate = false;
+        m_threadData->thread    = boost::thread(&Corpus::_nextFracThreadFn, this);
 
         m_totalSequences = m_sequences.size();
         m_outputPatternSize = std::min(m_max_vocab_size, (int)m_wordids.size());
@@ -737,14 +794,14 @@ namespace data_sets {
 
 #ifdef _MYMPI
 
-    void str_bcast(std::string& s) 
+    void str_bcast(std::string& s)
     {
         int size = (int)s.size();
         MPI::COMM_WORLD.Bcast(&size, 1, MPI::INT, 0);
         char* arr = new char[size];
         strcpy(arr, s.c_str());
         MPI::COMM_WORLD.Bcast((void*)arr, (int)size, MPI::CHAR, 0);
-        s.assign(arr, size); 
+        s.assign(arr, size);
         delete arr;
     }
 
@@ -852,9 +909,9 @@ namespace data_sets {
         */
 
         int *buf;
-        int dataAmount; 
+        int dataAmount;
         int bufsize = truncSeqLength - 1;
-        int mallocsize = 268435456; // 1gb 
+        int mallocsize = 268435456; // 1gb
         //{{  // parallel loading from binary file
         int readsize;
         int l = 0;
@@ -863,18 +920,18 @@ namespace data_sets {
                                           MPI::MODE_RDONLY, MPI::INFO_NULL);
         MPI::Offset fsize = f.Get_size() / sizeof(int);
         dataAmount = (fsize / bufsize) / procs; // number-of-mini-batch / procs
-        if (mallocsize > (fsize / procs) ) 
+        if (mallocsize > (fsize / procs) )
             readsize = dataAmount * bufsize;
-        else 
+        else
             readsize = (mallocsize / bufsize) * bufsize;
         buf = (int*) malloc(readsize * sizeof(int));
         int max_iteration = ((dataAmount * bufsize) / readsize);
         while (l < max_iteration) {
-            
+
             f.Set_view( (procs * l * readsize) * sizeof(int) + rank * readsize * sizeof(int), MPI_INT, MPI_INT, "native", MPI::INFO_NULL);
             f.Read_all((void*)buf, readsize, MPI_INT, status);
             ++l;
-            
+
             std::vector<sequence_t> sequences;
 
             int seqidxCount = 0;
@@ -947,6 +1004,8 @@ namespace data_sets {
 
             m_threadData->thread.join();
         }
+        boost::filesystem::remove(m_cacheFileName);
+
     }
 
     bool Corpus::isClassificationData() const
@@ -1053,4 +1112,35 @@ namespace data_sets {
         return p;
     }
 
+    std::string Corpus::copy() {
+        int M = 100;
+        std::string tmpFileName = (boost::filesystem::temp_directory_path() / boost::filesystem::unique_path()).string();
+        std::ofstream ofs(tmpFileName, std::ios::binary);
+        m_cacheFile.seekg(0, m_cacheFile.end);
+        int length = m_cacheFile.tellg();
+        m_cacheFile.seekg(0, m_cacheFile.beg);
+        int* buf = new int[M];
+        printf("length : %d\n", length);
+        bool first  = true;
+        while (true) {
+            if ( M * sizeof(int) > length) {
+                m_cacheFile.read((char*)buf, length);
+                ofs.write((const char*)buf, length);
+                break;
+            }
+            m_cacheFile.read((char*)buf, M * sizeof(int));
+            ofs.write((const char*)buf, M * sizeof(int));
+            length -= M * sizeof(int);
+            if (first) {
+            for (int i = 0; i < M; ++i) {
+                std::cout << buf[i] << " ";
+            }
+            std::cout << std::endl;
+            first = false;
+            }
+        }
+        delete[] buf;
+        return tmpFileName;
+
+    }
 } // namespace data_sets

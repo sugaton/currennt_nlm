@@ -124,9 +124,9 @@ int trainerMain(const Configuration &config)
         printf("Reading network from '%s'... ", networkFile.c_str());
         fflush(stdout);
         rapidjson::Document netDoc;
+        readJsonFile(&netDoc, networkFile);
         std::string importdir = config.importDir();
         std::string savedir = config.exportDir();
-        readJsonFile(&netDoc, networkFile);
         printf("done.\n");
         printf("\n");
         std::unordered_map<std::string, int> _wordDict;
@@ -197,12 +197,12 @@ int trainerMain(const Configuration &config)
 
         NeuralNetwork<TDevice> neuralNetwork(netDoc, parallelSequences, maxSeqLength, inputSize, outputSize, vocab_size, config.devices());
         neuralNetwork.setWordDict(&_wordDict);
+        if (config.fixedLookup())
+            neuralNetwork.fixLookup();
         if (importdir != "")
             neuralNetwork.importWeightsBinary(importdir);
         if (config.pretrainedEmbeddings() != "")
             neuralNetwork.loadEmbeddings(config.pretrainedEmbeddings());
-        if (config.fixedLookup())
-            neuralNetwork.fixLookup();
 
         if (!trainingSet->empty() && trainingSet->outputPatternSize() != neuralNetwork.postOutputLayer().size())
             throw std::runtime_error("Post output layer size != target pattern size of the training set");
@@ -275,7 +275,7 @@ int trainerMain(const Configuration &config)
                 restoreState(&neuralNetwork, &*optimizer, &infoRows);
                 printf("done.\n\n");
             }
-
+            optimizer->divide_trainingset();
             // train the network
             printf("Starting training...\n");
             printf("\n");
@@ -376,12 +376,14 @@ int trainerMain(const Configuration &config)
             printf("done.\n");
 
             std::cout << "Removing cache file(s) ..." << std::endl;
+            /*
             if (trainingSet != boost::shared_ptr<data_sets::Corpus>())
                 boost::filesystem::remove(trainingSet->cacheFileName());
             if (validationSet != boost::shared_ptr<data_sets::Corpus>())
                 boost::filesystem::remove(validationSet->cacheFileName());
             if (testSet != boost::shared_ptr<data_sets::Corpus>())
                 boost::filesystem::remove(testSet->cacheFileName());
+                */
         }
         // evaluation mode
         else {

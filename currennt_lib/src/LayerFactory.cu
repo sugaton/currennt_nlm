@@ -38,7 +38,7 @@
 #include "activation_functions/Logistic.cuh"
 #include "activation_functions/Identity.cuh"
 
-#ifndef NOT75
+#ifdef CUDA75
   #include "layers/dnnLstmLayer.hpp"
 #endif
 
@@ -75,7 +75,7 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "lstm")
     	return new LstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, false);
 
-#ifndef NOT75
+#ifdef CUDA75
     else if (layerType == "dnnlstm"){
 			if ( std::is_same<TDevice, Gpu>::value )
 	    	return new dnnLstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, false);
@@ -88,7 +88,7 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "blstm")
     	return new LstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, true);
 
-#ifndef NOT75
+#ifdef CUDA75
     else if (layerType == "dnnblstm"){
 			if ( std::is_same<TDevice, Gpu>::value )
 	    	return new dnnLstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, false);

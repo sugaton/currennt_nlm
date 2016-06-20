@@ -34,6 +34,9 @@
 #include <vector>
 #include <climits>
 #include <fstream>
+#include <fstream>
+#include <thread>
+#include <mutex>
 
 #ifdef _MYMPI
 
@@ -117,6 +120,10 @@ namespace data_sets {
         bool m_fixed_wordDict;
         long long int m_nextid;
 
+        std::mutex _load_inputs_mtx;
+        std::mutex _load_outputs_mtx;
+        std::mutex _load_targets_mtx;
+
     public:
         /**
          * Creates an empty data set
@@ -133,6 +140,7 @@ namespace data_sets {
          * @param noiseDev Static noise deviation
          * @param wordids  Pointer of fixed dictionary
          */
+        Corpus(Corpus& corpus, int pid, int threadNum);
         Corpus(const std::vector<std::string> &ncfiles, int parSeq, real_t fraction=1,
             int truncSeqLength=0,
             bool fracShuf=false, bool seqShuf=false, real_t noiseDev=0,
@@ -257,6 +265,7 @@ namespace data_sets {
 
         boost::shared_ptr<CorpusFraction> getNewFrac();
 
+        std::string copy() ;
     };
 
 } // namespace data_sets

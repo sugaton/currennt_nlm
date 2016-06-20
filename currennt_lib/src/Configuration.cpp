@@ -163,6 +163,7 @@ Configuration::Configuration(int argc, const char *argv[])
         ("fixedLookup",        po::value(&m_fixlookup)   ->default_value(false), "if this is true, system don't update input embeddings")
         ("limit_hour",        po::value(&m_limithour)   ->default_value(-1), "specify maximum learning time")
         ("sync_pace",        po::value(&m_sync_pace)   ->default_value(-1), "specify maximum learning time")
+        ("wsd_threshold",        po::value(&m_wsd_threshold)   ->default_value(0.0), "specify maximum learning time")
         ;
 
     po::options_description autosaveOptions("Autosave options");
@@ -697,4 +698,9 @@ int Configuration::limitHour() const
 int Configuration::syncPace() const
 {
     return m_sync_pace;
+}
+
+double Configuration::wsd_threshold() const
+{
+    return m_wsd_threshold;
 }
