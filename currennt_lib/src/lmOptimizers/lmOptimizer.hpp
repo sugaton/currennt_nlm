@@ -85,7 +85,7 @@ namespace optimizers {
         void _storeWeights();
         void _restoreWeights();
         void _resetWeightUpdates();
-#ifdef MPI
+#ifdef _MYMPI
         void _syncWeight();
 #endif
 

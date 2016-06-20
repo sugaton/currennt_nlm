@@ -153,7 +153,7 @@ int trainerMain(const Configuration &config)
                 // TODO add option fixed_dict();
                 //    int iffix = config.fixed_dict()
                 //    trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, iffix);
-                trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, 0);
+                trainingSet = loadDataSet(DATA_SET_TRAINING, config.max_vocab_size(), &_wordDict, 1);
                 _wordDict = *(trainingSet->dict());
             }
 
