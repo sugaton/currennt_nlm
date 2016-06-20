@@ -130,9 +130,10 @@ int trainerMain(const Configuration &config)
         printf("done.\n");
         printf("\n");
         std::unordered_map<std::string, int> _wordDict;
+        std::unordered_map<std::string, int> _wordDict2;
         if (importdir != "") {
             std::string fname = importdir + "/wdict.cereal";
-            importDictBinary(_wordDict, fname);
+            importDictBinary(_wordDict2, fname);
         }
 
         // loadDict(&netDoc, &_wordDict);
@@ -197,12 +198,12 @@ int trainerMain(const Configuration &config)
 
         NeuralNetwork<TDevice> neuralNetwork(netDoc, parallelSequences, maxSeqLength, inputSize, outputSize, vocab_size, config.devices());
         neuralNetwork.setWordDict(&_wordDict);
-        if (importdir != "")
-            neuralNetwork.importWeightsBinary(importdir);
-        if (config.pretrainedEmbeddings() != "")
-            neuralNetwork.loadEmbeddings(config.pretrainedEmbeddings());
         if (config.fixedLookup())
             neuralNetwork.fixLookup();
+        if (importdir != "")
+            neuralNetwork.importWeightsBinary(importdir, &_wordDict2);
+        if (config.pretrainedEmbeddings() != "")
+            neuralNetwork.loadEmbeddings(config.pretrainedEmbeddings());
 
         if (!trainingSet->empty() && trainingSet->outputPatternSize() != neuralNetwork.postOutputLayer().size())
             throw std::runtime_error("Post output layer size != target pattern size of the training set");

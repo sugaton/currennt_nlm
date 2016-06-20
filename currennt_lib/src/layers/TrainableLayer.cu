@@ -30,6 +30,7 @@
 
 #include <stdexcept>
 #include <fstream>
+#include <map>
 
 #include <boost/random/normal_distribution.hpp>
 #include <boost/random/uniform_real_distribution.hpp>
@@ -280,6 +281,30 @@ namespace layers {
             // ifs >> item;
             ifs.read((char*) &item, sizeof(real_t));
             m_weights[i] = item;
+        }
+    }
+
+    template <typename TDevice>
+    void TrainableLayer<TDevice>::importWeightsBinary_partially(const std::string &dirname, std::map<int, int>& enabled)
+    {
+        std::string filename = dirname + "/" + this->name();
+        std::ifstream ifs(filename, std::ios_base::binary);
+        size_t size;
+        int idx, j, a;
+        real_t item;
+        ifs.read((char*) &size, sizeof(size_t));
+        int dsize = (int)size / enabled.size();
+        // ifs >> size;
+        assert( size == m_weights.size() );
+        for (size_t i = 0; i < size; ++i) {
+            // ifs >> item;
+            a = i / dsize;
+            idx = enabled[a];
+            j = i % dsize;
+            ifs.read((char*) &item, sizeof(real_t));
+            // if (enabled.find(i) != enabled.end())
+            if (idx != -1)
+                m_weights[idx + j] = item;
         }
     }
 

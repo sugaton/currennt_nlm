@@ -60,7 +60,7 @@ std::vector<std::string> make_layerList(std::string networkFile, std::string dir
 
     std::vector<std::string> llist = std::vector<std::string>();
     for (std::string l : tmp) {
-        if (boost::filesystem::exists(dir + "/" + l))
+        if (boost::filesystem::exists(dir + "/" + l) && l != "lookup")
             llist.push_back(l);
     }
     return llist;
@@ -73,7 +73,7 @@ void importWeightsBinary(const std::string &filename, std::vector<float> &weight
     std::ifstream ifs(filename, std::ios_base::binary);
     size_t size;
     float item;
-    ifs.read((char*) &size, sizeof(float));
+    ifs.read((char*) &size, sizeof(size_t));
     weight.resize(size);
     for (size_t i = 0; i < size; ++i) {
         ifs.read((char*) &item, sizeof(float));

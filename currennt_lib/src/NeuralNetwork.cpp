@@ -37,6 +37,20 @@
 #include <boost/foreach.hpp>
 
 
+void __make_Mask(std::map<int, int> &s, std::unordered_map<std::string, int> *m1, std::map<std::string, int> *m2)
+{
+    std::string w;
+    int i1, i2;
+    for (auto it = m1->begin(); it != m1->end(); ++it) {
+        w = it->first;
+        i1 = it->second;
+        if (m2->find(w) == m2->end()){
+            s[i1] = -1;
+            continue;
+        }
+        s[i1] = (*m2)[w];
+    }
+}
 template <typename TDevice>
 NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc, int parallelSequences, int maxSeqLength,
                                       int inputSizeOverride, int outputSizeOverride, int vocab_size, int numberOfDevice)
@@ -62,6 +76,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc, int 
         }
         m_layers.resize(numberOfDevice);
         // extract the layers
+        int lcount = 0;
         for (rapidjson::Value::ValueIterator layerChild = layersSection.Begin(); layerChild != layersSection.End(); ++layerChild) {
             // check the layer child type
             if (!layerChild->IsObject())
@@ -91,6 +106,7 @@ NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc, int 
                 (*layerChild).AddMember("w_size", vocab_size, jsonDoc->GetAllocator());
                 if (jsonDoc->HasMember("max_lookup_size"))
                     (*layerChild).AddMember("max_gpusize", (*jsonDoc)["max_lookup_size"].GetInt(), jsonDoc->GetAllocator());
+                m_lookup_layer_idx = lcount;
             }
 // */
             for (size_t device = 0; device < m_layers.size(); ++device){
@@ -104,12 +120,13 @@ NeuralNetwork<TDevice>::NeuralNetwork(const helpers::JsonDocument &jsonDoc, int 
                         layer = LayerFactory<TDevice>::createLayer(layerType, &*layerChild, weightsSection, parallelSequences, maxSeqLength, m_layers.at(device).back().get());
 
                     m_layers.at(device).push_back(boost::shared_ptr<layers::Layer<TDevice> >(layer));
-        void saveEvery(std::string savedir);
+        // void saveEvery(std::string savedir);
                 }
                 catch (const std::exception &e) {
                     throw std::runtime_error(std::string("Could not create layer: ") + e.what());
                 }
             }
+            ++lcount;
         }
 
         // check if we have at least one input, one output and one post output layer
@@ -212,6 +229,13 @@ layers::PostOutputLayer<TDevice>& NeuralNetwork<TDevice>::postOutputLayer(const 
 {
     cudaSetDevice(device);
     return static_cast<layers::PostOutputLayer<TDevice>&>(*m_layers.at(device).back());
+}
+
+template <typename TDevice>
+layers::LookupLayer<TDevice>& NeuralNetwork<TDevice>::lookupLayer(const int device)
+{
+    cudaSetDevice(device);
+    return static_cast<layers::LookupLayer<TDevice>&>(*m_layers.at(device).at(m_lookup_layer_idx));
 }
 
 template <typename TDevice>
@@ -346,7 +370,7 @@ void NeuralNetwork<TDevice>::exportWeightsBinary(const std::string &dirname) con
 }
 
 template <typename TDevice>
-void NeuralNetwork<TDevice>::importWeightsBinary(const std::string &dirname)
+void NeuralNetwork<TDevice>::importWeightsBinary(const std::string &dirname, std::unordered_map<std::string, int>* m)
 {
     // cudaSetDevice(0);
 
@@ -354,13 +378,25 @@ void NeuralNetwork<TDevice>::importWeightsBinary(const std::string &dirname)
     for (size_t device = 0; device < m_layers.size(); ++device){
         cudaSetDevice(device);
         BOOST_FOREACH (const boost::shared_ptr<layers::Layer<TDevice> > &layer, m_layers[device]) {
-        	layers::TrainableLayer<TDevice> *trainableLayer = dynamic_cast<layers::TrainableLayer<TDevice>*>(layer.get());
-            if (trainableLayer)
-                trainableLayer->importWeightsBinary(dirname);
+            layers::TrainableLayer<TDevice> *trainableLayer = dynamic_cast<layers::TrainableLayer<TDevice>*>(layer.get());
+            if (trainableLayer){
+                if (trainableLayer->type() == "softmax"){
+                    std::map<int, int> enabled = std::map<int, int>();
+                    __make_Mask(enabled, m, this->lookupLayer().getWordDict());
+                    trainableLayer->importWeightsBinary_partially(dirname, enabled);
+                }
+                else
+                    trainableLayer->importWeightsBinary(dirname);
+
+
+            }
             else{
             	layers::LookupLayer<TDevice> *lookup = dynamic_cast<layers::LookupLayer<TDevice>*>(layer.get());
-                if (lookup)
+                if (lookup){
+                    if (lookup->fixed())
+                        continue;
                     lookup->importWeightsBinary(dirname);
+                }
             }
         }
     }

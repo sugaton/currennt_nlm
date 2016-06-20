@@ -27,6 +27,7 @@
 #include "layers/InputLayer.hpp"
 #include "rnnlm/intInputLayer.hpp"
 #include "layers/TrainableLayer.hpp"
+#include "rnnlm/LookupLayer.hpp"
 #include "layers/PostOutputLayer.hpp"
 #include "data_sets/DataSet.hpp"
 #include "helpers/JsonClassesForward.hpp"
@@ -52,6 +53,7 @@ class NeuralNetwork
     typedef typename TDevice::real_vector real_vector;
 private:
     std::vector< std::vector<boost::shared_ptr<layers::Layer<TDevice> > > > m_layers;
+    int m_lookup_layer_idx = -1;
 
 public:
     /**
@@ -98,6 +100,7 @@ public:
      */
     layers::PostOutputLayer<TDevice>& postOutputLayer(const int device = 0);
 
+    layers::LookupLayer<TDevice>& lookupLayer(const int device = 0);
     /**
      * Loads sequences to the device
      *
@@ -150,7 +153,7 @@ public:
     void exportWeights(const helpers::JsonDocument& jsonDoc) const;
 
     void exportWeightsBinary(const std::string &dirname) const;
-    void importWeightsBinary(const std::string &dirname);
+    void importWeightsBinary(const std::string &dirname, std::unordered_map<std::string, int> *m = NULL);
     /**
      * Returns the outputs of the processed fraction
      *

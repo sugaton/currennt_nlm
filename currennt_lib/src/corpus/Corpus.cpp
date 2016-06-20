@@ -651,25 +651,21 @@ namespace data_sets {
                 }
             }
 
-            if (first_file) {
-                m_outputMeans  = Cpu::real_vector(m_outputPatternSize, 0.0f);
-                m_outputStdevs = Cpu::real_vector(m_outputPatternSize, 1.0f);
-                // }
-            }
-
-            // create next fraction data and start the thread
-            m_threadData.reset(new thread_data_t);
-            m_threadData->finished  = false;
-            m_threadData->terminate = false;
-            m_threadData->thread    = boost::thread(&Corpus::_nextFracThreadFn, this);
-
             m_sequences.insert(m_sequences.end(), sequences.begin(), sequences.end());
 
             first_file = false;
         } // txt file loop
+    // create next fraction data and start the thread
+        m_threadData.reset(new thread_data_t);
+        m_threadData->finished  = false;
+        m_threadData->terminate = false;
+        m_threadData->thread    = boost::thread(&Corpus::_nextFracThreadFn, this);
+
 
         m_totalSequences = m_sequences.size();
         m_outputPatternSize = std::min(m_max_vocab_size, (int)m_wordids.size());
+        m_outputMeans  = Cpu::real_vector(m_outputPatternSize, 0.0f);
+        m_outputStdevs = Cpu::real_vector(m_outputPatternSize, 1.0f);
         printf("outputPatternSize: %d(m_max_vocab_size %d, m_wordids.size %d)\n", m_outputPatternSize, m_max_vocab_size, m_wordids.size());
         printf("max_vocab_size %d, m_wordids.size %d)\n", max_vocab_size, INT_MAX);
         // sort sequences by length
@@ -737,14 +733,14 @@ namespace data_sets {
 
 #ifdef _MYMPI
 
-    void str_bcast(std::string& s) 
+    void str_bcast(std::string& s)
     {
         int size = (int)s.size();
         MPI::COMM_WORLD.Bcast(&size, 1, MPI::INT, 0);
         char* arr = new char[size];
         strcpy(arr, s.c_str());
         MPI::COMM_WORLD.Bcast((void*)arr, (int)size, MPI::CHAR, 0);
-        s.assign(arr, size); 
+        s.assign(arr, size);
         delete arr;
     }
 
@@ -852,9 +848,9 @@ namespace data_sets {
         */
 
         int *buf;
-        int dataAmount; 
+        int dataAmount;
         int bufsize = truncSeqLength - 1;
-        int mallocsize = 268435456; // 1gb 
+        int mallocsize = 268435456; // 1gb
         //{{  // parallel loading from binary file
         int readsize;
         int l = 0;
@@ -863,18 +859,18 @@ namespace data_sets {
                                           MPI::MODE_RDONLY, MPI::INFO_NULL);
         MPI::Offset fsize = f.Get_size() / sizeof(int);
         dataAmount = (fsize / bufsize) / procs; // number-of-mini-batch / procs
-        if (mallocsize > (fsize / procs) ) 
+        if (mallocsize > (fsize / procs) )
             readsize = dataAmount * bufsize;
-        else 
+        else
             readsize = (mallocsize / bufsize) * bufsize;
         buf = (int*) malloc(readsize * sizeof(int));
         int max_iteration = ((dataAmount * bufsize) / readsize);
         while (l < max_iteration) {
-            
+
             f.Set_view( (procs * l * readsize) * sizeof(int) + rank * readsize * sizeof(int), MPI_INT, MPI_INT, "native", MPI::INFO_NULL);
             f.Read_all((void*)buf, readsize, MPI_INT, status);
             ++l;
-            
+
             std::vector<sequence_t> sequences;
 
             int seqidxCount = 0;

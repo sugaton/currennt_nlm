@@ -295,6 +295,13 @@ namespace layers {
         */  // no need
         m_wdict = *(wdic);
     }
+
+    template <typename TDevice>
+    std::map<std::string, int>* LookupLayer<TDevice>::getWordDict()
+    {
+        return &m_wdict;
+    }
+
     template <typename TDevice>
     LookupLayer<TDevice>::~LookupLayer()
     {

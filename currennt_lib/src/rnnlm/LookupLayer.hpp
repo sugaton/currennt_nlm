@@ -60,6 +60,7 @@ namespace layers {
 
 
         void setWordDict(std::map<std::string, int> *wdic);
+        std::map<std::string, int>* getWordDict();
         // from TrainableLayer
         Layer<TDevice>& precedingLayer();
         const Layer<TDevice>& precedingLayer() const;

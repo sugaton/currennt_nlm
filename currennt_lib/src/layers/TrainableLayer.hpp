@@ -24,6 +24,7 @@
 #define LAYERS_TRAINABLELAYER_HPP
 
 #include "Layer.hpp"
+#include <map>
 
 
 namespace layers {
@@ -159,6 +160,7 @@ namespace layers {
 
         void importWeightsBinary(const std::string &dirname);
 
+        void importWeightsBinary_partially(const std::string &dirname, std::map<int, int>& enabled);
         /**
          * @see Layer::exportLayer()
          */
