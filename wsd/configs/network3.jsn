@@ -1,0 +1,32 @@
+{
+    "layers": [
+        {
+            "size": 1,
+            "name": "intinput",
+            "type": "intinput"
+        },
+		  {
+            "size": 256,
+            "name": "lookup",
+            "type": "lookup"
+        },
+
+        {
+            "size": 128,
+            "name": "blstm_level_0",
+            "bias": 1.0,
+            "type": "blstm"
+        },
+        {
+            "size": 1,
+            "name": "output",
+            "bias": 1.0,
+            "type": "softmax"
+        },
+        {
+            "size": 1,
+            "name": "postoutput",
+            "type": "multiclass_classification"
+        }
+    ]
+}
