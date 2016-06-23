@@ -105,6 +105,8 @@ private:
     int m_limithour;
     int m_sync_pace;
 
+    double m_wsd_threshold;
+
     std::string m_networkFile;
     std::string m_trainedNetwork;
     std::string m_feedForwardOutputFile;
@@ -500,6 +502,7 @@ public:
     int limitHour() const;
     int syncPace() const;
     bool fixedLookup() const;
+    double wsd_threshold() const;
 };
 
 
