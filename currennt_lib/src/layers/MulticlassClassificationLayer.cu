@@ -216,14 +216,18 @@ namespace layers {
     }
 
     template <typename TDevice>
-    real_t MulticlassClassificationLayer<TDevice>::calculateError()
+    real_t MulticlassClassificationLayer<TDevice>::calculateError(int end)
     {
         // calculate the cross entropy error
         internal::ComputeCrossEntropyErrorFn fn;
         fn.layerSize = this->size();
         fn.outputs   = helpers::getRawPointer(this->_actualOutputs());
 
-        int n = this->curMaxSeqLength() * this->parallelSequences();
+        int n;
+        if (end == -1)
+            n = this->curMaxSeqLength() * this->parallelSequences();
+        else
+            n = end * this->parallelSequences();
 
         real_t error = thrust::transform_reduce(
             thrust::make_zip_iterator(thrust::make_tuple(m_patTargetClasses.begin(),   thrust::counting_iterator<int>(0))),

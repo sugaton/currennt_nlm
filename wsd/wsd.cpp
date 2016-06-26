@@ -76,8 +76,98 @@
 #include <cfloat>
 #include <iomanip>
 
+namespace beam { // namespace for class 'Beam_state'
 
-// #define SHOW
+    class Beam_state
+    {
+    private:
+        std::shared_ptr<std::vector<std::string>> m_created_words;
+        int m_max_size;
+        int m_position;
+        double m_score;
+        double m_wsdscores;
+    public:
+        Beam_state(int max_size);
+        Beam_state(const std::vector<std::string>& v, double score, int max_size, double wsdscores=0.0);
+        Beam_state(const Beam_state& bs);
+        // getter
+        double score() const;
+        double wsdscore() const;
+        std::shared_ptr<std::vector<std::string>> words();
+        const std::shared_ptr<std::vector<std::string>> cwords() const;
+        int state_length() const;
+        int position() const;
+
+        void transition(std::string& word, double score);
+        //setter
+        void set_score(const double& score);
+        void set_posi(const int& position);
+        void set_words(const std::vector<std::string>& v);
+        bool operator>(const Beam_state& bs) const;
+        bool operator<(const Beam_state& bs) const;
+    };
+
+    Beam_state::Beam_state(int max_size)
+    {
+        m_created_words = std::make_shared<std::vector<std::string>>();
+        m_created_words->reserve(max_size);
+        m_score = 0.0;
+        m_wsdscores = 0.0;
+        m_max_size = max_size;
+        m_position = 0;
+    }
+
+    Beam_state::Beam_state(const std::vector<std::string>& v, double score, int max_size, double wsdscores)
+    {
+        m_created_words = std::make_shared<std::vector<std::string>>(v.size());
+        m_created_words->reserve(max_size);
+        std::copy( v.begin(), v.end(), m_created_words->begin() );
+        m_score = score;
+        m_wsdscores = wsdscores;
+        m_max_size = max_size;
+        m_position = 0;
+    }
+
+    // copy constructor
+    Beam_state::Beam_state(const Beam_state& bs)
+    {
+        m_score = bs.m_score;
+        m_max_size = bs.m_max_size;
+        m_position = bs.m_position;
+        m_wsdscores = bs.m_wsdscores;
+        m_created_words = std::make_shared<std::vector<std::string>>(bs.state_length());
+        m_created_words->reserve(m_max_size);
+        std::copy( bs.cwords()->begin(), bs.cwords()->end(), m_created_words->begin() );
+    }
+
+    //getter
+    double Beam_state::score() const { return m_score; }
+    double Beam_state::wsdscore() const { return m_wsdscores; }
+    std::shared_ptr<std::vector<std::string>> Beam_state::words() { return m_created_words; }
+    const std::shared_ptr<std::vector<std::string>> Beam_state::cwords() const { return m_created_words; }
+    int Beam_state::state_length() const { return (int)m_created_words->size(); }
+    int Beam_state::position() const { return m_position; }
+    //setter
+    void Beam_state::set_score(const double& score) { m_score = score; }
+    void Beam_state::set_posi(const int& position) { m_position = position; };
+    void Beam_state::set_words(const std::vector<std::string>& v)
+    {
+        if (m_created_words->size() < v.size())
+            m_created_words->resize(v.size());
+        m_created_words->clear();
+        std::copy( v.begin(), v.end(), m_created_words->begin() );
+    }
+
+    void Beam_state::transition(std::string& word, double score)
+    {
+        m_created_words->push_back(word);
+        m_score = score;
+    }
+
+    bool Beam_state::operator>(const Beam_state& bs) const { return m_score > bs.score(); }
+    bool Beam_state::operator<(const Beam_state& bs) const { return m_score < bs.score(); }
+
+} // end of namespace beam
 
 void swap32 (uint32_t *p)
 {
@@ -141,13 +231,42 @@ void makeFrac(const std::vector<std::string>& words,
               boost::shared_ptr<data_sets::CorpusFraction> frac,
               int size);
 
+std::tuple<std::string, POS_type_t> getLexemeSynset(std::string word, std::string lexeme);
+std::string getsynset(const std::string& lexeme);
+
 std::string wsd(const std::string& word,
                 const POS_type_t& pos,
                 const std::vector<std::string>& synsets,
                 Cpu::real_vector& output,
                 const std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb,
                 double thr = 0.0,
-                int *wsd_count = NULL);
+                int *wsd_count = NULL,
+                double *logprob = NULL,
+                int bestK = 1,
+                std::vector<std::shared_ptr<std::pair<std::string,double>>> *v = NULL);
+
+template <typename TDevice>
+int simple_wsd(NeuralNetwork<Cpu>& neuralNetwork,
+               const std::string& wsd_input,
+               const std::string& wsd_output,
+               std::unordered_map<std::string, std::vector<std::string>> &word_synsets,
+               const std::unordered_map<std::string, std::unique_ptr<Cpu::real_vector>> &lexeme_emb,
+               double thr,
+               boost::shared_ptr<data_sets::Corpus> &testSet,
+               const std::unordered_map<std::string, int>& _wordDict2);
+
+template <typename TDevice>
+int beam_wsd(NeuralNetwork<Cpu>& neuralNetwork,
+             const std::string& wsd_input,
+             const std::string& wsd_output,
+             std::unordered_map<std::string, std::vector<std::string>> &word_synsets,
+             const std::unordered_map<std::string, std::unique_ptr<Cpu::real_vector>> &lexeme_emb,
+             double thr,
+             int beam_size,
+             boost::shared_ptr<data_sets::Corpus> &testSet,
+             const std::unordered_map<std::string, int>& _wordDict2);
+
+
 
 // main function
 template <typename TDevice>
@@ -228,13 +347,28 @@ int trainerMain(const Configuration &config)
         printf("done.\n");
         printf("loading layers weights... ");
         fflush(stdout);
-
         if (importdir != "")
-            neuralNetwork.importWeightsBinary(importdir);
+            neuralNetwork.importWeightsBinary(importdir, &_wordDict);
         printf("done.\n");
 
+        // loading lexeme-embeddings to LookupLayer
+        std::unordered_map<std::string, int> wdic_lex;
+        wdic_lex = _wordDict2;
+        int c = (int)wdic_lex.size();
+        std::string syn_;
+        for (auto it = lexeme_emb.begin(); it != lexeme_emb.end(); ++it) {
+            syn_ = getsynset(it->first);
+            if (wdic_lex.find(syn_) == wdic_lex.end())
+                wdic_lex[syn_] = c++;
+        }
+        neuralNetwork.setWordDict(&wdic_lex);
         if (config.pretrainedEmbeddings() != "")
             neuralNetwork.loadEmbeddings(config.pretrainedEmbeddings());
+        // neuralNetwork.loadEmbeddings(config.lexeme_file());
+        for (auto it = lexeme_emb.begin(); it != lexeme_emb.end(); ++it) {
+            syn_ = getsynset(it->first);
+            neuralNetwork.lookupLayer().replaceEmbeddings(syn_, *(it->second));
+        }
 
         printf("Layers:\n");
         printLayers(neuralNetwork);
@@ -285,71 +419,17 @@ int trainerMain(const Configuration &config)
         }
 
         // process all data set fractions
-        int fracIdx = 0;
         printf("open test-file and output-result-file\n");
-        std::ifstream ifs(Configuration::instance().testFiles()[0]);
-        std::ofstream ofs(Configuration::instance().wsdResult());
-        std::string line, word, wsd_result;
-        POS_type_t _p;
-        std::vector<std::string> words;
-        std::vector<POS_type_t> pos;
-        // std::vector<int> POS;
-        int d = (int)(lexeme_emb.begin()->second)->size();
-        Cpu::real_vector output_;
+        std::string wsd_input = Configuration::instance().testFiles()[0];
+        std::string wsd_output = config.wsdResult();
         double thr = config.wsd_threshold();
-        output_.reserve(d);
-        typename TDevice::real_vector outputs;
-        printf("start wsd\n");
-        int cand = 0;
-        int cand_sum = 0;
-        double cand_average = 0;
-        int did_wsd = 0;
-        while (std::getline(ifs, line)) {
-            // printf("Computing outputs for data fraction %d...", ++fracIdx);
-            // fflush(stdout);
-            boost::shared_ptr<data_sets::CorpusFraction> frac = testSet->getNewFrac();
-            readLine(line, words, pos);
-            // printf("make Fraction\n");
-            makeFrac(words, _wordDict2, frac, outputSize);
-            // compute the forward pass for the current data fraction and extract the outputs
-            // printf("compute forward\n");
-            neuralNetwork.loadSequences(*frac);
-            neuralNetwork.computeForwardPass();
-            outputs = neuralNetwork.last_layer();
-            // output_ = outputs; //copying
-            // thrust::copy(outputs.begin(), outputs.size(), output_.begin());
+        // boost::shared_ptr<data_sets::CorpusFraction> frac = testSet->getNewFrac();
+        // cand_average = simple_wsd(neuralNetwork, wsd_input, wsd_output, word_synsets, lexeme_emb, thr, frac);
+        int beam_size = 5;
+        beam_wsd<Cpu>(neuralNetwork, wsd_input, wsd_output, word_synsets, lexeme_emb, thr, beam_size, testSet, wdic_lex);
 
-            // write one output file per sequence
-            // printf("wsd\n");
-            // printf("outputsize:%d, dimension:%d, hiddenlayer_size:%d\n", outputs.size(), d, output_.size());
-            for (int i = 0; i < words.size(); ++i) {
-                thrust::copy(outputs.begin() + i * d, outputs.begin() + (i+1) * d, output_.begin());
 
-                word = words.at(i);
-                _p = pos.at(i);
-                if (word_synsets.find(word) == word_synsets.end())
-                    wsd_result = word;
-                else if (_p == POS_OTHER)
-                    wsd_result = word;
-                else {
-                    wsd_result = wsd(word, _p, word_synsets[word], output_, lexeme_emb, thr, &cand);
-                    if (cand != 0) {
-                        cand_sum += cand;
-                        did_wsd += 1;
-                        cand = 0;
-                    }
-                }
-                std::cout << "word: " << word << " || result: " << wsd_result << std::endl;
-                ofs << wsd_result << " ";
-            }
-            ofs << std::endl;
-
-            // printf(" done.\n");
-        }
-        cand_average = (double)cand_sum / (double)did_wsd;
         // boost::filesystem::remove(feedForwardSet->cacheFileName());
-        std::cout << "the average of the number of candidate included in disambiguated word : " << cand_average << " (";
-        std::cout <<  cand_sum << ", " << did_wsd << " )" << std::endl;
     }
     catch (const std::exception &e) {
         printf("FAILED: %s\n", e.what());
@@ -400,7 +480,8 @@ int main(int argc, const char *argv[])
             std::cerr << "FAILED: " << cudaGetErrorString(err) << std::endl;
             return err;
         }
-        return trainerMain<Gpu>(config);
+        // return trainerMain<Gpu>(config);
+        return 1;
     }
     else
         return trainerMain<Cpu>(config);
@@ -811,6 +892,38 @@ void makeInput(const std::vector<std::string>& words,
             input->push_back(it->second);
     }
 }
+
+std::string getWord(std::string w)
+{
+    std::string word;
+    std::stringstream ss(w);
+    std::getline(ss, word, '%');
+    return word;
+}
+void makeTarget(const std::vector<std::string>& words,
+                const std::unordered_map<std::string, int>& dic,
+                Cpu::int_vector *target)
+{
+    target->reserve(words.size());
+    std::string unk = "<UNK>";
+    int unk_int = dic.find(unk)->second;
+    for (auto w : words) {
+        if (w.find('%') != std::string::npos) {
+            w = getWord(w);
+        }
+        auto it = dic.find(w);
+        if (it == dic.end())
+            target->push_back(unk_int);
+        else
+            target->push_back(it->second);
+    }
+}
+void show_(Cpu::int_vector &v) {
+    for (int i = 0; i < v.size(); ++i) {
+        std::cout << v[i] << " ";
+    }
+    std::cout << std::endl;
+}
 void makeFrac(const std::vector<std::string>& words,
               const std::unordered_map<std::string, int>& dic,
               boost::shared_ptr<data_sets::CorpusFraction> frac,
@@ -851,6 +964,7 @@ void makeFrac(const std::vector<std::string>& words,
     // printf("make input\n");
     Cpu::int_vector input = Cpu::int_vector();
     makeInput(words, dic, &input);
+    show_(input);
 
     // printf("place vector to memory\n");
     for (int timestep = 0; timestep < words.size(); ++timestep) {
@@ -875,14 +989,17 @@ void makeFrac(const std::vector<std::string>& words,
 
         //  target classes
         //  only classification
-    /*
-    Cpu::int_vector targetClasses = _loadTargetClassesFromCache(seq);
+    // /*
+    // Cpu::int_vector targetClasses = _loadTargetClassesFromCache(seq);
+    Cpu::int_vector targetClasses = Cpu::int_vector();
+    makeTarget(words, dic, &targetClasses);
+
     for (int timestep = 0; timestep < words.size(); ++timestep) {
         int tgt = 0; // default class (make configurable?)
         if (timestep >= output_lag)
             tgt = targetClasses[timestep - output_lag];
         // frac->m_targetClasses[timestep * m_parallelSequences + i] = tgt;
-        frac->setTargetClasses(timestep * m_parallelSequences + i, tgt);
+        frac->setTargetClasses(timestep, tgt);
     }
     // pattern types
     for (int timestep = 0; timestep < words.size(); ++timestep) {
@@ -895,8 +1012,8 @@ void makeFrac(const std::vector<std::string>& words,
             patType = PATTYPE_NORMAL;
 
         // frac->m_patTypes[timestep * m_parallelSequences + i] = patType;
-        frac->setPatTypes(timestep * m_parallelSequences + i, patType);
-    }*/
+        frac->setPatTypes(timestep , patType);
+    }
 }
 //
 // inline float logsumexp(float x, float y)
@@ -952,9 +1069,9 @@ void checkinf(M& m, const int size)
 }
 std::tuple<std::string, POS_type_t> getLexemeSynset(std::string word, std::string lexeme)
 {
-    std::string synsets;
+    std::string synsets, tmp;
     std::stringstream lexss(lexeme);
-    std::getline(lexss, synsets, '-');
+    std::getline(lexss, tmp, '-');  // word
     std::getline(lexss, synsets, '-');
 
     std::stringstream ss(synsets);
@@ -1000,13 +1117,26 @@ std::tuple<std::string, POS_type_t> getLexemeSynset(std::string word, std::strin
 
 }
 
+std::string getsynset(const std::string& lexeme)
+{
+    std::stringstream ss(lexeme);
+    std::string word, syn;
+    POS_type_t p;
+    std::getline(ss, word, '-');
+    std::tie(syn, p) = getLexemeSynset(word, lexeme);
+    return syn;
+}
+
 std::string wsd(const std::string& word,
                 const POS_type_t& pos,
                 const std::vector<std::string>& synsets,
                 Cpu::real_vector& output,
                 const std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb,
                 double thr,
-                int *count_wsd)
+                int *count_wsd,
+                double *logprob,
+                int bestK,
+                std::vector<std::shared_ptr<std::pair<double, std::string>>> *v)
 {
 
     // Cpu::real_vector W;
@@ -1083,41 +1213,295 @@ std::string wsd(const std::string& word,
     scores.reserve(num_syn);
     for (int i = 0; i < num_syn; ++i) {
         std::tie(syn, pos_) = getLexemeSynset(word, synsets[i]);
-        // printf("syn, pos1, pos2: %s %d %d\n", syn.c_str(), pos, pos_);
         if (pos != pos_) continue;
         ++counting;
         scores.push_back(std::make_pair(result(i), syn));
-        /*
-        if (_max < result(i)) {
-            max2 = _max;
-            _max = result(i);
-            max_syn = syn;
-            maxarg = i;
-        }
-        else if(max2 < result(i)) {
-            max2 = result(i);
-        }*/
     }
     if (counting == 0)
         return word;
     std::sort(scores.begin(), scores.end(), [](const std::pair<double, std::string>& a, const std::pair<double, std::string>& b){return a.first > b.first;});
-    // assert(maxarg != -1 || counting == 0);
-    // return synsets[maxarg];
     *count_wsd = 0;
 
     max_syn = scores.at(0).second;
     _max = scores.at(0).first;
     if (counting > 1)
         max2 = scores.at(1).first;
+
 #ifdef SHOW
     printf("max, max2 , counting: %lf %1.4lf %d\n", _max, max2, counting);
 #endif//#ifdef SHOW
 
+    if (bestK > 1) {
+        v->clear();
+        int K = (bestK < scores.size()) ? bestK : scores.size();
+        std::cout << "cant-size : " << K << std::endl;
+        for (int i = 0; i < K; ++i) {
+            std::cout << "wsd, cand : " << scores.at(i).second << std::endl;
+            auto cand = std::make_shared<std::pair<double, std::string>>(scores.at(i));
+            v->push_back(cand);
+        }
+        return max_syn;
+    }
     if (thr < (_max - max2)) {
         *count_wsd = counting;
+        *logprob = _max;
         return max_syn;
     }
     else
         return word;
 
 }
+
+
+template <typename TDevice>
+int simple_wsd(NeuralNetwork<Cpu>& neuralNetwork,
+               const std::string& wsd_input,
+               const std::string& wsd_output,
+               std::unordered_map<std::string, std::vector<std::string>> &word_synsets,
+               const std::unordered_map<std::string, std::unique_ptr<Cpu::real_vector>> &lexeme_emb,
+               double thr,
+               boost::shared_ptr<data_sets::Corpus> &testSet,
+               const std::unordered_map<std::string, int>& _wordDict2)
+{
+    std::ifstream ifs(wsd_input);
+    std::ofstream ofs(wsd_output);
+    std::string line, word, wsd_result;
+    POS_type_t _p;
+    std::vector<std::string> words;
+    std::vector<POS_type_t> pos;
+    int outputSize = neuralNetwork.outputLayer().size();
+    // std::vector<int> POS;
+    int d = (int)(lexeme_emb.begin()->second)->size();
+    Cpu::real_vector output_;
+    output_.reserve(d);
+    typename TDevice::real_vector outputs;
+    printf("start wsd\n");
+    int cand = 0;
+    int cand_sum = 0;
+    double cand_average = 0;
+    int did_wsd = 0;
+    while (std::getline(ifs, line)) {
+        boost::shared_ptr<data_sets::CorpusFraction> frac = testSet->getNewFrac();
+        readLine(line, words, pos);
+        makeFrac(words, _wordDict2, frac, outputSize);
+        neuralNetwork.loadSequences(*frac);
+        neuralNetwork.computeForwardPass();
+        outputs = neuralNetwork.last_layer();
+        for (int i = 0; i < words.size(); ++i) {
+            thrust::copy(outputs.begin() + i * d, outputs.begin() + (i+1) * d, output_.begin());
+
+            word = words.at(i);
+            _p = pos.at(i);
+            if (word_synsets.find(word) == word_synsets.end())
+                wsd_result = word;
+            else if (_p == POS_OTHER)
+                wsd_result = word;
+            else {
+                wsd_result = wsd(word, _p, word_synsets[word], output_, lexeme_emb, thr, &cand);
+                if (cand != 0) {
+                    cand_sum += cand;
+                    did_wsd += 1;
+                    cand = 0;
+                }
+            }
+            std::cout << "word: " << word << " || result: " << wsd_result << std::endl;
+            ofs << wsd_result << " ";
+        }
+        ofs << std::endl;
+
+        // printf(" done.\n");
+    }
+    cand_average = (double)cand_sum / (double)did_wsd;
+    std::cout << "the average of the number of candidate included in disambiguated word : " << cand_average << " (";
+    std::cout <<  cand_sum << ", " << did_wsd << " )" << std::endl;
+}
+
+void outputResult(std::ofstream &ofs, std::vector<std::string> *words)
+{
+    for (auto word : *words) {
+        ofs << word << " ";
+    }
+    ofs << std::endl;
+}
+
+
+// template <typename TDevice>
+void beam_wsd_act(NeuralNetwork<Cpu>& neuralNetwork,
+                  std::vector<std::string> *words,
+                  std::vector<POS_type_t>& pos,
+                  std::unordered_map<std::string, std::vector<std::string>> &word_synsets,
+                  const std::unordered_map<std::string, std::unique_ptr<Cpu::real_vector>> &lexeme_emb,
+                  double thr,
+                  int start_pos,
+                  double wsdscore,
+                  int beam_size,
+                  std::vector<std::shared_ptr<beam::Beam_state>>& beamv,
+                  boost::shared_ptr<data_sets::Corpus> &testSet,
+                  const std::unordered_map<std::string, int>& _wordDict2)
+{
+    std::string line, word, wsd_result;
+    POS_type_t _p;
+    double logp;
+    double score;
+    int start_pos_;
+    int cand;
+
+    int outputSize = neuralNetwork.outputLayer().size();
+    boost::shared_ptr<data_sets::CorpusFraction> frac = testSet->getNewFrac();
+    makeFrac(*words, _wordDict2, frac, outputSize);
+
+    int d = (int)(lexeme_emb.begin()->second)->size();
+    // typename TDevice::real_vector outputs;
+    Cpu::real_vector outputs;
+    Cpu::real_vector output_;
+    output_.reserve(d);
+
+    neuralNetwork.loadSequences(*frac);
+    neuralNetwork.computeForwardPass();
+    outputs = neuralNetwork.last_layer();
+    std::vector<std::shared_ptr<std::pair<double, std::string>>> results;
+    results.reserve(beam_size);
+    bool ifbreak = false;
+    for (int i = start_pos; i < words->size(); ++i) {
+        thrust::copy(outputs.begin() + i * d, outputs.begin() + (i+1) * d, output_.begin());
+
+        word = words->at(i);
+        _p = pos.at(i);
+        if (word_synsets.find(word) == word_synsets.end())
+            wsd_result = word;
+        else if (_p == POS_OTHER)
+            wsd_result = word;
+        else {
+            wsd(word, _p, word_synsets[word], output_, lexeme_emb, thr, &cand, &logp, beam_size, &results);
+            if (results.size() == 0) {
+                printf("result is 0\n");
+                continue;
+            }
+            start_pos_ = i + 1;
+            ifbreak = true;
+            break;
+        }
+    }
+    double logsumprob;
+    if (ifbreak){
+        logsumprob = -(double)neuralNetwork.calculateError(start_pos_ - 1);
+        std::cout << start_pos_ << ": " << std::endl;
+        for (auto cand : results) {
+            std::cout << "  " <<  cand->second << ": " << cand->first  << std::endl;
+            score = logsumprob + cand->first + wsdscore;
+            beamv.push_back(std::make_shared<beam::Beam_state>(*words, score, words->size(), wsdscore + cand->first));
+            beamv.back()->words()->at(start_pos_ - 1) = cand->second;
+            beamv.back()->set_posi(start_pos_);
+        }
+    }
+    else {
+        logsumprob = -(double)neuralNetwork.calculateError();
+        start_pos_ = words->size();
+        score = logsumprob + wsdscore;
+        //no changes
+        beamv.push_back(std::make_shared<beam::Beam_state>(*words, score, words->size(), wsdscore));
+        beamv.back()->set_posi(start_pos_);
+    }
+
+}
+
+template <typename T>
+void show_v(std::vector<T> v)
+{
+    for (const T& a : v) {
+        std::cout << a << " ";
+    }
+    std::cout << std::endl;
+}
+
+template <typename TDevice>
+int beam_wsd(NeuralNetwork<Cpu>& neuralNetwork,
+             const std::string& wsd_input,
+             const std::string& wsd_output,
+             std::unordered_map<std::string, std::vector<std::string>> &word_synsets,
+             const std::unordered_map<std::string, std::unique_ptr<Cpu::real_vector>> &lexeme_emb,
+             double thr,
+             int beam_size,
+             boost::shared_ptr<data_sets::Corpus> &testSet,
+             const std::unordered_map<std::string, int>& _wordDict2)
+{
+    std::ifstream ifs(wsd_input);
+    std::ofstream ofs(wsd_output);
+    std::string line, word, wsd_result;
+    POS_type_t _p;
+    std::vector<std::string> words;
+    std::vector<POS_type_t> pos;
+    // std::vector<int> POS;
+    printf("start wsd\n");
+    int cand = 0;
+    int cand_sum = 0;
+    double cand_average = 0;
+    int did_wsd = 0;
+
+    std::vector<std::shared_ptr<beam::Beam_state>> beamv;
+    std::vector<std::shared_ptr<beam::Beam_state>> next_cand;
+    beamv.reserve(beam_size);
+    next_cand.reserve(beam_size * beam_size);
+    while (std::getline(ifs, line)) {
+        beamv.clear();
+        readLine(line, words, pos);
+        // for (int i = 0; i < beam_size; ++i)
+        double last_score=1;
+        beamv.push_back(std::make_shared<beam::Beam_state>(words, 0.0, words.size(), 0.0));
+        int start_pos = 0;
+        while(start_pos < words.size()) {
+            for (auto cand : beamv) {
+                // beam_wsd_act<TDevice>(
+                show_v(*(cand.get()->words()));
+                if (last_score == cand->score())
+                    continue;
+                last_score = cand->score();
+                beam_wsd_act(
+                    neuralNetwork,
+                    cand.get()->words().get(),
+                    pos,
+                    word_synsets,
+                    lexeme_emb,
+                    thr,
+                    start_pos,
+                    cand->wsdscore(),
+                    beam_size,
+                    next_cand,
+                    testSet,
+                    _wordDict2
+                );
+            }
+            beamv.clear();
+            // sort and get next beam
+            std::sort(
+                next_cand.begin(),
+                next_cand.end(),
+                [](std::shared_ptr<beam::Beam_state> &l, std::shared_ptr<beam::Beam_state> &r)
+                { return *l.get() > *r.get(); }
+            );
+            int next_size = (next_cand.size() < beam_size) ? next_cand.size() : beam_size;
+            std::cout << "next beam : " << next_cand.size() << std::endl;
+            beamv.resize(next_size);
+            std::copy (next_cand.begin(), next_cand.begin() + next_size, beamv.begin());
+            next_cand.clear();
+            start_pos = beamv.begin()->get()->position();
+            std::cout << "now, at " << start_pos << " size" << beamv.size() << std::endl;
+            if (beamv.size() == 0) throw std::runtime_error("there is no state in beam");
+        }
+        // output wsd result
+        if (beamv.size() > 1){
+            if (beamv[0]->score() - beamv[1]->score() > thr)
+                outputResult(ofs, beamv[0]->words().get());
+            else
+                outputResult(ofs, &words);
+        }
+        else
+            outputResult(ofs, beamv[0]->words().get());
+    }
+    // cand_average = (double)cand_sum / (double)did_wsd;
+}
+
+
+/*
+    score stores the sum of log-probability of selected sense
+*/

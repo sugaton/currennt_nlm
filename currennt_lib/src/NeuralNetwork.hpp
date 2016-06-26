@@ -127,7 +127,7 @@ public:
      *
      * @return The computed error
      */
-    real_t calculateError(const int device = 0) const;
+    real_t calculateError(int end = -1, const int device = 0) const;
     // entropy ver.
     real_t calculateEntropy(const int device = 0) const;
 

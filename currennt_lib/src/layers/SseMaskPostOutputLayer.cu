@@ -117,7 +117,7 @@ namespace layers {
     }
 
     template <typename TDevice>
-    real_t SseMaskPostOutputLayer<TDevice>::calculateError()
+    real_t SseMaskPostOutputLayer<TDevice>::calculateError(int end)
     {
         internal::ComputeSseMaskFn fn;
         fn.layerSize = this->size() / 2;

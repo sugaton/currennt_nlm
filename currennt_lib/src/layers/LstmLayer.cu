@@ -1113,6 +1113,68 @@ namespace layers {
     }
 
 
+    /*
+    template <typename TDevice>
+    void LstmLayer<TDevice>::operate()
+    {
+        // for unidirectional LSTM, we can write the outputs directly in the layer output vector
+        if (m_isBidirectional)
+            throw std::runtime_error("bidirectional LstmLayer does not support function 'operate()' ");
+
+        m_fw.tmpOutputs.swap(this->_outputs());
+
+        // sum up the activations from the preceding layer
+        {{
+            // forward states
+            m_fw.niActsMatrix.assignProduct(m_fw.weightMatrices.niInput, true, m_precLayerOutputsMatrix, false);
+            m_fw.igActsMatrix.assignProduct(m_fw.weightMatrices.igInput, true, m_precLayerOutputsMatrix, false);
+            m_fw.fgActsMatrix.assignProduct(m_fw.weightMatrices.fgInput, true, m_precLayerOutputsMatrix, false);
+            m_fw.ogActsMatrix.assignProduct(m_fw.weightMatrices.ogInput, true, m_precLayerOutputsMatrix, false);
+        }}
+
+        // compute the block outputs
+        {{
+            int els = this->size();
+            // int n   = this->parallelSequences() * els;
+
+            // forward states
+            internal::ComputeBlockOutputFn fn;
+            fn.effLayerSize       = els;
+            fn.prevOutputDistance = -n;
+            fn.bias               = this->bias();
+            fn.patTypes           = helpers::getRawPointer(this->patTypes());
+            fn.niBiasWeights      = _rawNiBiasWeights;
+            fn.igBiasWeights      = _rawIgBiasWeights;
+            fn.fgBiasWeights      = _rawFgBiasWeights;
+            fn.ogBiasWeights      = _rawOgBiasWeights;
+            fn.igPeepWeights      = _rawIgPeepholeWeights;
+            fn.fgPeepWeights      = _rawFgPeepholeWeights;
+            fn.ogPeepWeights      = _rawOgPeepholeWeights;
+            fn.cellStates         = helpers::getRawPointer(m_fw.cellStates);
+            fn.niActs             = helpers::getRawPointer(m_fw.niActs);
+            fn.igActs             = helpers::getRawPointer(m_fw.igActs);
+            fn.fgActs             = helpers::getRawPointer(m_fw.fgActs);
+            fn.ogActs             = helpers::getRawPointer(m_fw.ogActs);
+
+            // collect outputs from previous timestep
+            if (timestep != 0) {
+                m_fw.timestepMatrices[timestep].niActs.addProduct(m_fw.weightMatrices.niInternal, true, m_fw.timestepMatrices[timestep-1].tmpOutputs, false);
+                m_fw.timestepMatrices[timestep].igActs.addProduct(m_fw.weightMatrices.igInternal, true, m_fw.timestepMatrices[timestep-1].tmpOutputs, false);
+                m_fw.timestepMatrices[timestep].fgActs.addProduct(m_fw.weightMatrices.fgInternal, true, m_fw.timestepMatrices[timestep-1].tmpOutputs, false);
+                m_fw.timestepMatrices[timestep].ogActs.addProduct(m_fw.weightMatrices.ogInternal, true, m_fw.timestepMatrices[timestep-1].tmpOutputs, false);
+            }
+
+            // compute outputs
+            thrust::transform(
+                thrust::counting_iterator<int>(n*timestep),
+                thrust::counting_iterator<int>(n*timestep) + n,
+                thrust::make_zip_iterator(thrust::make_tuple(thrust::constant_iterator<bool>(!timestep), thrust::constant_iterator<bool>(timestep >= this->curMinSeqLength()))),
+                m_fw.tmpOutputs.begin() + n*timestep,
+                fn
+                );
+        }}
+    }
+    // */
     // explicit template instantiations
     template class LstmLayer<Cpu>;
     template class LstmLayer<Gpu>;

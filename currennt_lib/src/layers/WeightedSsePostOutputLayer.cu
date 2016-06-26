@@ -117,7 +117,7 @@ namespace layers {
     }
 
     template <typename TDevice>
-    real_t WeightedSsePostOutputLayer<TDevice>::calculateError()
+    real_t WeightedSsePostOutputLayer<TDevice>::calculateError(int end)
     {
         internal::ComputeWeightedSseFn fn;
         fn.layerSize = this->size() / 2;

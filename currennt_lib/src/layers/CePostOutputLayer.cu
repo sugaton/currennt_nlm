@@ -123,7 +123,7 @@ namespace layers {
     }
 
     template <typename TDevice>
-    real_t CePostOutputLayer<TDevice>::calculateError()
+    real_t CePostOutputLayer<TDevice>::calculateError(int end)
     {
         internal::ComputeCeFn fn;
         fn.layerSize = this->size();

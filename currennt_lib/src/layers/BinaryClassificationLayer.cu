@@ -164,7 +164,7 @@ namespace layers {
     }
 
     template <typename TDevice>
-    real_t BinaryClassificationLayer<TDevice>::calculateError()
+    real_t BinaryClassificationLayer<TDevice>::calculateError(int end)
     {
         internal::ComputeCrossEntropyErrorFn fn;
         fn.patTypes = helpers::getRawPointer(this->patTypes());

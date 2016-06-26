@@ -191,19 +191,18 @@ namespace layers {
 
             weights.resize(this->size());
 
-            if (config.weightsDistributionType() == Configuration::DISTRIBUTION_UNIFORM) {
-                real_t range = config.weightsDistributionUniformMax() - config.weightsDistributionUniformMin();
-                boost::random::uniform_real_distribution<real_t> dist(0, range);
-                for (size_t i = 0; i < weights.size(); ++i)
-                    weights[i] = dist(*gen) + config.weightsDistributionUniformMin();
-            }
-            else {
-                for (int c = 0; c < m_wsize; ++c){
+            for (int c = 0; c < m_wsize; ++c){
+                if (config.weightsDistributionType() == Configuration::DISTRIBUTION_UNIFORM) {
+                    real_t range = config.weightsDistributionUniformMax() - config.weightsDistributionUniformMin();
+                    boost::random::uniform_real_distribution<real_t> dist(0, range);
+                    for (size_t i = 0; i < weights.size(); ++i)
+                        weights[i] = dist(*gen) + config.weightsDistributionUniformMin();
+                }
+                else {
                     for (size_t i = 0; i < this->size(); ++i)
                         weights[i] = dist(*gen);
-                    _AddEmbedding(weights, c, m_maximum_gpusize);
                 }
-
+                _AddEmbedding(weights, c, m_maximum_gpusize);
             }
         }
         m_weightUpdates = real_vector(this->parallelSequences() * this->maxSeqLength() * this->size());
@@ -244,56 +243,15 @@ namespace layers {
     template <typename TDevice>
     void LookupLayer<TDevice>::setWordDict(std::map<std::string, int> *wdic)
     {
-       /*
-        // for random initialization
-        const Configuration &config = Configuration::instance();
-        static boost::mt19937 *gen = NULL;
-        if (!gen) {
-            gen = new boost::mt19937;
-            gen->seed(config.randomSeed());
-        }
-        boost::random::normal_distribution<real_t> dist(config.weightsDistributionNormalMean(), config.weightsDistributionNormalSigma());
-        auto _rand =  [&]{ return dist(*gen); };
-
-        std::vector< std::unique_ptr<helpers::Embedding<TDevice>> > new_embeddings;
-        new_embeddings.resize(m_embeddings.size());
-
-        std::set<int> unplaced;
-        for (int i = 0; i < m_embeddings.size(); ++i)
-            unplaced.emplace(i);
-
-        for (auto it = wdic->begin(); it != wdic->end(); ++it){
-            std::string word = it->first;
-            int wid = it->second;
-            auto wordIt = m_wdict.find(word);
-            if (wordIt == wdic->end()){
-                // we should use this space for another embedding
-                // thus re-initialization randomly
-                Cpu::real_vector h_tmp;
-                thrust::generate(h_tmp.begin(), h_tmp.end(), _rand);
-                real_vector tmp = h_tmp;
-                m_embeddings[wid]->replace(&tmp);
-                continue;
-            }
-
-            int newid = wordIt->second;
-            new_embeddings[newid] = std::move(m_embeddings[wid]);
-            unplaced.erase(newid);
-        }
-        //operation for remaining word
-        for (int i = 0; i < m_embeddings.size(); ++i){ // unique_ptr
-            if( m_embeddings.at(i) == nullptr ) // already moved
-                continue;
-            int nextid = *(unplaced.begin());
-            new_embeddings[nextid] = std::move(m_embeddings.at(i));
-            unplaced.erase(nextid);
-        }
-        // restore embeddings in m_embeddings
-        for (int i = 0; i < new_embeddings.size(); ++i){
-            m_embeddings[i] = std::move(new_embeddings[i]);
-        }
-        */  // no need
         m_wdict = *(wdic);
+
+        if (m_wdict.size() > m_embeddings.size()) {
+            m_embeddings.reserve(m_wdict.size());
+            Cpu::real_vector vec (this->size(), 0.0);
+            int N = m_embeddings.size();
+            for (int i =0; i < m_wdict.size() - N; ++i)
+                _AddEmbedding(vec, N + i, m_maximum_gpusize);
+        }
     }
 
     template <typename TDevice>
@@ -333,6 +291,7 @@ namespace layers {
 
         // start should be "TheNumberOfWord(wordnum) Dimension(size)"
         // load first line
+        std::cout << "m_embeddings.size() : "  << m_embeddings.size() << std::endl;
         std::getline(ifs, line);
         sscanf(line.data(), "%lld %d", &wordnum, &size);
 
@@ -354,8 +313,19 @@ namespace layers {
             //copying to device (this is needed if TDevice==GPU)
             thrust::copy(vec.begin(), vec.end(), Dvec.begin());
             // replace embedding
-            m_embeddings[it->second]->replace(&Dvec);
+            m_embeddings.at(it->second)->replace(&Dvec);
         }
+    }
+
+    template <typename TDevice>
+    void LookupLayer<TDevice>::replaceEmbeddings(const std::string& word, const Cpu::real_vector& v)
+    {
+        auto it = m_wdict.find(word);
+        if (it == m_wdict.end()) return;
+        real_vector Dvec;
+        Dvec.resize(v.size());
+        thrust::copy(v.begin(), v.end(), Dvec.begin());
+        m_embeddings.at(it->second)->replace(&Dvec);
     }
 
 

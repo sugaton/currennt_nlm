@@ -281,10 +281,10 @@ void NeuralNetwork<TDevice>::computeBackwardPass()
 }
 
 template <typename TDevice>
-real_t NeuralNetwork<TDevice>::calculateError(const int device) const
+real_t NeuralNetwork<TDevice>::calculateError(int end, const int device) const
 {
     cudaSetDevice(device);
-    return static_cast<layers::PostOutputLayer<TDevice>&>(*m_layers[device].back()).calculateError();
+    return static_cast<layers::PostOutputLayer<TDevice>&>(*m_layers[device].back()).calculateError(end);
 }
 
 template <typename TDevice>

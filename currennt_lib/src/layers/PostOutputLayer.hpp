@@ -77,7 +77,7 @@ namespace layers {
          *
          * @return The error
          */
-        virtual real_t calculateError() =0;
+        virtual real_t calculateError(int end = -1) =0;
         virtual real_t calculateEntropy() =0;
 
     };

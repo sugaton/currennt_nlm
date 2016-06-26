@@ -123,7 +123,7 @@ namespace layers {
     }
 
     template <typename TDevice>
-    real_t RmsePostOutputLayer<TDevice>::calculateError()
+    real_t RmsePostOutputLayer<TDevice>::calculateError(int end)
     {
         real_t rmse = thrust::reduce(
             m_rmses.begin(),

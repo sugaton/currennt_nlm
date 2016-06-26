@@ -78,6 +78,11 @@ namespace layers {
         */
         void loadEmbeddings(const std::string& filename);
 
+        /*
+            replacing word's embedding by v.
+        */
+        void replaceEmbeddings(const std::string& word, const Cpu::real_vector& v);
+
         /**
          * @see Layer::type()
          */

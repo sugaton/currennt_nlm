@@ -69,7 +69,7 @@ namespace layers {
         /**
          * @see PostOutputLayer::calculateError()
          */
-        virtual real_t calculateError();
+        virtual real_t calculateError(int end = -1);
         virtual real_t calculateEntropy();
 
         /**
