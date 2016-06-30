@@ -25,7 +25,7 @@
 #include "layers/InputLayer.hpp"
 #include "layers/FeedForwardLayer.hpp"
 #include "layers/SoftmaxLayer.hpp"
-#include "layers/dnnSoftmaxLayer.hpp"
+//#include "layers/dnnSoftmaxLayer.hpp"
 #include "layers/LstmLayer.hpp"
 #include "layers/SsePostOutputLayer.hpp"
 #include "layers/RmsePostOutputLayer.hpp"
@@ -69,8 +69,8 @@ layers::Layer<TDevice>* LayerFactory<TDevice>::createLayer(
     else if (layerType == "softmax")
     	return new SoftmaxLayer<TDevice, Identity>(layerChild, weightsSection, *precedingLayer);
 
-    else if (layerType == "dnnsoftmax")
-        return new dnnSoftmaxLayer<TDevice, Identity>(layerChild, weightsSection, *precedingLayer);
+    //else if (layerType == "dnnsoftmax")
+        //return new dnnSoftmaxLayer<TDevice, Identity>(layerChild, weightsSection, *precedingLayer);
 
     else if (layerType == "lstm")
     	return new LstmLayer<TDevice>(layerChild, weightsSection, *precedingLayer, false);

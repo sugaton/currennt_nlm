@@ -28,6 +28,10 @@
 #include "getRawPointer.cuh"
 #include "cublas.hpp"
 
+#ifndef NOTBLAS
+  #include "blas.hpp"
+#endif
+
 #include <stdexcept>
 
 #include <thrust/transform.h>
@@ -215,6 +219,9 @@ namespace helpers {
     {
     }
 
+
+#ifdef NOTBLAS
+
     template <typename TDevice>
     void Matrix<TDevice>::assignProduct(const Matrix<TDevice> &a, bool transposeA, const Matrix<TDevice> &b, bool transposeB)
     {
@@ -348,7 +355,9 @@ namespace helpers {
         }
     }
 
-#if (USE_CUBLAS == 1 && THRUST_DEVICE_BACKEND == THRUST_DEVICE_BACKEND_CUDA)
+#endif // end of NOTBLAS
+
+// #if (USE_CUBLAS == 1 && THRUST_DEVICE_BACKEND == THRUST_DEVICE_BACKEND_CUDA)
     template <>
     void Matrix<Gpu>::assignProduct(const Matrix<Gpu> &a, bool transposeA, const Matrix<Gpu> &b, bool transposeB)
     {
@@ -374,8 +383,33 @@ namespace helpers {
             true
             );
     }
-#endif
+// #endif
 
+  // need cblas
+    template <>
+    void Matrix<Cpu>::assignProduct(const Matrix<Cpu> &a, bool transposeA, const Matrix<Cpu> &b, bool transposeB)
+    {
+        blas::multiplyMatrices(
+            transposeA, transposeB,
+            m_rows, m_cols, (transposeA ? a.m_rows : a.m_cols),
+            a.m_data, a.m_rows,
+            b.m_data, b.m_rows,
+            m_data,     m_rows,
+            false
+            );
+    }
+    template <>
+    void Matrix<Cpu>::addProduct(const Matrix<Cpu> &a, bool transposeA, const Matrix<Cpu> &b, bool transposeB)
+    {
+        blas::multiplyMatrices(
+            transposeA, transposeB,
+            m_rows, m_cols, (transposeA ? a.m_rows : a.m_cols),
+            a.m_data, a.m_rows,
+            b.m_data, b.m_rows,
+            m_data,     m_rows,
+            true
+            );
+    }
     // explicit template instantiations
     template class Matrix<Cpu>;
     template class Matrix<Gpu>;

@@ -65,6 +65,8 @@ private:
     bool m_autosave;
     bool m_autosaveBest;
     bool m_fixlookup;
+    bool m_paramCheck;
+    bool m_beam_s2c;
 
     optimizer_type_t         m_optimizer;
     distribution_type_t      m_weightsDistribution;
@@ -104,6 +106,7 @@ private:
     int m_temp_show;
     int m_limithour;
     int m_sync_pace;
+    int m_beam_size;
 
     double m_wsd_threshold;
 
@@ -115,6 +118,7 @@ private:
     std::string m_cachePath;
     std::string m_embeddingFile;
     std::string m_lexemeFile;
+    std::string m_lexemeInputFile;
     std::string m_wsdResult;
     std::string m_importDir;
     std::string m_exportDir;
@@ -494,6 +498,7 @@ public:
 
     const std::string& pretrainedEmbeddings() const;
     const std::string& lexeme_file() const;
+    const std::string& lexemeInput_file() const;
     const std::string& wsdResult() const;
     std::string importDir() const;
     std::string exportDir() const;
@@ -503,6 +508,9 @@ public:
     int syncPace() const;
     bool fixedLookup() const;
     double wsd_threshold() const;
+    int beam_size() const;
+    bool paramCheck() const;
+    bool beam_s2c() const;
 };
 
 

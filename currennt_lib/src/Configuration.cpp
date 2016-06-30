@@ -127,6 +127,7 @@ Configuration::Configuration(int argc, const char *argv[])
         ("list_devices",       po::value(&m_listDevices)      ->default_value(false),         "display list of CUDA devices and exit")
         ("parallel_sequences", po::value(&m_parallelSequences)->default_value(1),             "sets the number of parallel calculated sequences")
         ("random_seed",        po::value(&m_randomSeed)       ->default_value(0u),            "sets the seed for the random number generator (0 = auto)")
+        ("paramCheck",         po::value(&m_paramCheck)       ->default_value(false),          "do only parameter checking")
         ;
 
     po::options_description feedForwardOptions("Forward pass options");
@@ -164,6 +165,8 @@ Configuration::Configuration(int argc, const char *argv[])
         ("limit_hour",        po::value(&m_limithour)   ->default_value(-1), "specify maximum learning time")
         ("sync_pace",        po::value(&m_sync_pace)   ->default_value(-1), "specify maximum learning time")
         ("wsd_threshold",        po::value(&m_wsd_threshold)   ->default_value(0.0), "specify maximum learning time")
+        ("beam_size",        po::value(&m_beam_size)   ->default_value(5), "specify beam size")
+        ("beam_s2c",        po::value(&m_beam_s2c)   ->default_value(false), "search from word that have more less candidate")
         ;
 
     po::options_description autosaveOptions("Autosave options");
@@ -190,7 +193,8 @@ Configuration::Configuration(int argc, const char *argv[])
         ("cache_path",        po::value(&m_cachePath)         ->default_value(""),        "sets the cache path where the .nc data is cached for random access")
         ("pretrainedEmbeddings",po::value(&m_embeddingFile)         ->default_value(""),        "sets the word2vec-style embeddings file (.txt)")
         ("lexemeEmbeddings",  po::value(&m_lexemeFile)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
-        ("wsdResult",         po::value(&m_wsdResult)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
+        ("lexemeInputEmbeddings",  po::value(&m_lexemeInputFile)         ->default_value(""),        "sets the lexeme embeddings file (for lookup layer(.txt)")
+        ("wsdResult",         po::value(&m_wsdResult)         ->default_value(""),        "sets the file where write wsd's result (.txt)")
         ("importDir",         po::value(&m_importDir)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
         ("exportDir",         po::value(&m_exportDir)         ->default_value(""),        "sets the lexeme embeddings file (.txt)")
         ("tmpbin",         po::value(&m_tmpbin)         ->default_value(""),        "for mpi_learning")
@@ -659,6 +663,10 @@ const std::string& Configuration::lexeme_file() const
     return m_lexemeFile;
 }
 
+const std::string& Configuration::lexemeInput_file() const
+{
+    return m_lexemeInputFile;
+}
 const std::string& Configuration::wsdResult() const
 {
     return m_wsdResult;
@@ -703,4 +711,19 @@ int Configuration::syncPace() const
 double Configuration::wsd_threshold() const
 {
     return m_wsd_threshold;
+}
+
+int Configuration::beam_size() const
+{
+    return m_beam_size;
+}
+
+bool Configuration::paramCheck() const
+{
+    return m_paramCheck;
+}
+
+bool Configuration::beam_s2c() const
+{
+    return m_beam_s2c;
 }

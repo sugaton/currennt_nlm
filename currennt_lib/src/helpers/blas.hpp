@@ -20,12 +20,12 @@
  * along with CURRENNT.  If not, see <http://www.gnu.org/licenses/>.
  *****************************************************************************/
 
-#ifndef HELPERS_CUBLAS_HPP
-#define HELPERS_CUBLAS_HPP
+#ifndef HELPERS_BLAS_HPP
+#define HELPERS_BLAS_HPP
 
 
 namespace helpers {
-namespace cublas {
+namespace blas {
 
     template <typename T>
     void multiplyMatrices(
