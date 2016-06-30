@@ -40,6 +40,7 @@
 #include "../currennt_lib/src/rnnlm/LookupLayer.hpp"
 #include "../currennt_lib/src/lmOptimizers/lmSteepestDescentOptimizer.hpp"
 // #include "../../currennt_lib/src/optimizers/SteepestDescentOptimizer.hpp"
+#include "statistics.hpp"
 
 #include "../currennt_lib/src/helpers/JsonClasses.hpp"
 #include "../currennt_lib/src/rapidjson/prettywriter.h"
@@ -67,6 +68,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <utility>
+#include <set>
 #include <algorithm>
 #include <algorithm>
 #include <stdarg.h>
@@ -92,6 +94,7 @@ namespace beam { // namespace for class 'Beam_state'
         Beam_state(const Beam_state& bs);
         // getter
         double score() const;
+        double score_() const;
         double wsdscore() const;
         std::shared_ptr<std::vector<std::string>> words();
         const std::shared_ptr<std::vector<std::string>> cwords() const;
@@ -142,6 +145,8 @@ namespace beam { // namespace for class 'Beam_state'
 
     //getter
     double Beam_state::score() const { return m_score; }
+    double Beam_state::score_() const { return m_score; }
+
     double Beam_state::wsdscore() const { return m_wsdscores; }
     std::shared_ptr<std::vector<std::string>> Beam_state::words() { return m_created_words; }
     const std::shared_ptr<std::vector<std::string>> Beam_state::cwords() const { return m_created_words; }
@@ -164,8 +169,8 @@ namespace beam { // namespace for class 'Beam_state'
         m_score = score;
     }
 
-    bool Beam_state::operator>(const Beam_state& bs) const { return m_score > bs.score(); }
-    bool Beam_state::operator<(const Beam_state& bs) const { return m_score < bs.score(); }
+    bool Beam_state::operator>(const Beam_state& bs) const { return this->score_() > bs.score_(); }
+    bool Beam_state::operator<(const Beam_state& bs) const { return this->score_() < bs.score_(); }
 
 } // end of namespace beam
 
@@ -200,6 +205,11 @@ enum data_set_type
     DATA_SET_FEEDFORWARD
 };
 
+enum BeamSearch_type_t {
+    BST_L2R,
+    BST_S2C
+};
+
 enum POS_type_t
 {
     NOUN,
@@ -221,6 +231,17 @@ template <typename TDevice> void saveState(const NeuralNetwork<TDevice> &nn, con
 template <typename TDevice> void restoreState(NeuralNetwork<TDevice> *nn, optimizers::lmOptimizer<TDevice> *optimizer, std::string *infoRows);
 std::string printfRow(const char *format, ...);
 void importDictBinary(std::unordered_map<std::string, int> &m, std::string &fname);
+
+void checkEachParmetersNorm(
+    std::unordered_map< std::string, std::vector<std::string> >& word_synsets,
+    std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb,
+    std::string filename
+);
+
+void normalizeParam(
+    std::unordered_map< std::string, std::vector<std::string> >& word_synsets,
+    std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb);
+
 void loadLexemes(const std::string& filename,
                  std::unordered_map< std::string, std::vector<std::string> >& word_synsets,
                  std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb);
@@ -264,7 +285,8 @@ int beam_wsd(NeuralNetwork<Cpu>& neuralNetwork,
              double thr,
              int beam_size,
              boost::shared_ptr<data_sets::Corpus> &testSet,
-             const std::unordered_map<std::string, int>& _wordDict2);
+             const std::unordered_map<std::string, int>& _wordDict2,
+             BeamSearch_type_t search_type);
 
 
 
@@ -313,9 +335,18 @@ int trainerMain(const Configuration &config)
         int parallelSequences = config.parallelSequences();
         std::unordered_map<std::string, std::vector<std::string>> word_synsets;
         std::unordered_map<std::string, std::unique_ptr<Cpu::real_vector>> lexeme_emb;
-        if (config.lexeme_file() == "")
+        /////for load input
+        std::unordered_map<std::string, std::unique_ptr<Cpu::real_vector>> lexeme_emb_input;
+        std::unordered_map<std::string, std::vector<std::string>> word_synsets2;
+        if (config.lexeme_file() == "" || config.lexemeInput_file() == "")
             throw std::runtime_error("specify lexeme_parameters");
         loadLexemes(config.lexeme_file(), word_synsets, lexeme_emb);
+        loadLexemes(config.lexemeInput_file(), word_synsets2, lexeme_emb_input);
+        normalizeParam(word_synsets, lexeme_emb);
+        if (config.paramCheck()) {
+            checkEachParmetersNorm(word_synsets, lexeme_emb, config.testFiles()[0]);
+            return 0;
+        }
         // modify input and output size in netDoc to match the training set size
         // trainingSet->inputPatternSize
         // trainingSet->outputPatternSize
@@ -356,7 +387,7 @@ int trainerMain(const Configuration &config)
         wdic_lex = _wordDict2;
         int c = (int)wdic_lex.size();
         std::string syn_;
-        for (auto it = lexeme_emb.begin(); it != lexeme_emb.end(); ++it) {
+        for (auto it = lexeme_emb_input.begin(); it != lexeme_emb_input.end(); ++it) {
             syn_ = getsynset(it->first);
             if (wdic_lex.find(syn_) == wdic_lex.end())
                 wdic_lex[syn_] = c++;
@@ -364,8 +395,8 @@ int trainerMain(const Configuration &config)
         neuralNetwork.setWordDict(&wdic_lex);
         if (config.pretrainedEmbeddings() != "")
             neuralNetwork.loadEmbeddings(config.pretrainedEmbeddings());
-        // neuralNetwork.loadEmbeddings(config.lexeme_file());
-        for (auto it = lexeme_emb.begin(); it != lexeme_emb.end(); ++it) {
+        // load lexemes
+        for (auto it = lexeme_emb_input.begin(); it != lexeme_emb_input.end(); ++it) {
             syn_ = getsynset(it->first);
             neuralNetwork.lookupLayer().replaceEmbeddings(syn_, *(it->second));
         }
@@ -424,9 +455,15 @@ int trainerMain(const Configuration &config)
         std::string wsd_output = config.wsdResult();
         double thr = config.wsd_threshold();
         // boost::shared_ptr<data_sets::CorpusFraction> frac = testSet->getNewFrac();
-        // cand_average = simple_wsd(neuralNetwork, wsd_input, wsd_output, word_synsets, lexeme_emb, thr, frac);
-        int beam_size = 5;
-        beam_wsd<Cpu>(neuralNetwork, wsd_input, wsd_output, word_synsets, lexeme_emb, thr, beam_size, testSet, wdic_lex);
+        int beam_size = config.beam_size();
+        if (beam_size > 0) {
+            if (config.beam_s2c())
+                beam_wsd<Cpu>(neuralNetwork, wsd_input, wsd_output, word_synsets, lexeme_emb, thr, beam_size, testSet, wdic_lex, BST_S2C);
+            else
+                beam_wsd<Cpu>(neuralNetwork, wsd_input, wsd_output, word_synsets, lexeme_emb, thr, beam_size, testSet, wdic_lex, BST_L2R);
+        }
+        else
+            simple_wsd<Cpu>(neuralNetwork, wsd_input, wsd_output, word_synsets, lexeme_emb, thr, testSet, wdic_lex);
 
 
         // boost::filesystem::remove(feedForwardSet->cacheFileName());
@@ -788,6 +825,106 @@ void getWordSynsetOfLexeme(std::string word, std::vector<std::string> *ret) {
     ret->at(1) = syn;
 }
 
+template <typename V>
+real_t Norm2(V& v) {
+    real_t norm = 0.;
+    for (size_t i = 0; i < v.size(); i++) {
+        norm += v[i] * v[i];
+    }
+    return std::sqrt(norm);
+}
+
+
+POS_type_t getPOStype(std::string postype)
+{
+    if (postype == "NOUN")
+        return NOUN;
+    else if (postype == "VERB")
+        return VERB;
+    else if (postype == "ADJ")
+        return ADJ;
+    else if (postype == "ADV")
+        return ADV;
+    else
+        return POS_OTHER;
+}
+
+void readLine(std::string line, std::vector<std::string>& words, std::vector<POS_type_t>& pos)
+{
+    words.clear();
+    pos.clear();
+    std::stringstream ss(line);
+    std::string word, item;
+    POS_type_t postag;
+    while (std::getline(ss, word, ' ')) {
+        postag = POS_OTHER;
+        std::stringstream lempos(word);
+        std::getline(lempos, item, '@');
+        words.push_back(item);
+        std::getline(lempos, item, '@');
+        postag = getPOStype(item);
+        pos.push_back(postag);
+    }
+}
+std::set<std::string> getSet(std::string filename)
+{
+    std::set<std::string> wordset;
+    std::ifstream ifs(filename);
+    std::string line, word;
+    std::vector<std::string> words;
+    std::vector<POS_type_t> p;
+
+    while (std::getline(ifs, line)) {
+        readLine(line, words, p);
+        for (const auto& word : words)
+            wordset.insert(word);
+    }
+    return wordset;
+}
+
+void checkEachParmetersNorm(std::unordered_map< std::string, std::vector<std::string> >& word_synsets,
+                            std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb,
+                            std::string filename)
+{
+    // for (const std::string& word : word)
+    std::string word, lex;
+    real_t norm, u, v, diff;
+    std::vector<real_t> norms;
+    std::vector<real_t> means, variances, diffs;
+    size_t size = word_synsets.size();
+    std::set<std::string> wordset = getSet(filename);
+
+    means.reserve(size);
+    variances.reserve(size);
+    diffs.reserve(size);
+
+    for (auto it = word_synsets.begin(); it != word_synsets.end(); ++it) {
+        word = it->first;
+        norms.clear();
+        if (it->second.size() <= 1 || wordset.find(word) == wordset.end())
+            continue;
+        norms.reserve(it->second.size());
+        for (const auto& lex : it->second) {
+            norms.push_back(Norm2(*(lexeme_emb[lex])));
+        }
+        u = statistics::mean(norms);
+        v = statistics::variance(norms);
+        diff = statistics::max_diff(norms);
+        std::cout << word << std::endl;
+        printf("  mean, variance, max_diff : (%f, %f, %f)\n", u, v, diff);
+
+        means.push_back(u);
+        variances.push_back(v);
+        diffs.push_back(diff);
+    }
+    u = statistics::mean(means);
+    v = statistics::mean(variances);
+    diff = statistics::mean(diffs);
+
+    printf("averaging all\n" );
+    printf("  mean, variance, max_diff : (%f, %f, %f)\n", u, v, diff);
+}
+
 void loadLexemes(const std::string& filename,
                  std::unordered_map< std::string, std::vector<std::string> >& word_synsets,
                  std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb)
@@ -835,37 +972,30 @@ void loadLexemes(const std::string& filename,
     printf("done. \n\n" );
 }
 
-POS_type_t getPOStype(std::string postype)
+
+void normalize(Cpu::real_vector& v)
 {
-    if (postype == "NOUN")
-        return NOUN;
-    else if (postype == "VERB")
-        return VERB;
-    else if (postype == "ADJ")
-        return ADJ;
-    else if (postype == "ADV")
-        return ADV;
-    else
-        return POS_OTHER;
-}
-void readLine(std::string line, std::vector<std::string>& words, std::vector<POS_type_t>& pos)
-{
-    words.clear();
-    pos.clear();
-    std::stringstream ss(line);
-    std::string word, item;
-    POS_type_t postag;
-    while (std::getline(ss, word, ' ')) {
-        postag = POS_OTHER;
-        std::stringstream lempos(word);
-        std::getline(lempos, item, '@');
-        words.push_back(item);
-        std::getline(lempos, item, '@');
-        postag = getPOStype(item);
-        pos.push_back(postag);
+    real_t Z = Norm2(v);
+    for (size_t i = 0; i < v.size(); i++) {
+        v[i] /= Z;
     }
 }
 
+void normalizeParam(
+    std::unordered_map< std::string, std::vector<std::string> >& word_synsets,
+    std::unordered_map< std::string, std::unique_ptr<Cpu::real_vector>>& lexeme_emb)
+{
+    std::string word, lex;
+
+    for (auto it = word_synsets.begin(); it != word_synsets.end(); ++it) {
+        word = it->first;
+        if (it->second.size() <= 1)
+            continue;
+        for (const auto& lex : it->second) {
+            normalize(*(lexeme_emb[lex]));
+        }
+    }
+}
 void readLine_(std::string line, std::vector<std::string>& words)
 {
     words.clear();
@@ -1280,6 +1410,8 @@ int simple_wsd(NeuralNetwork<Cpu>& neuralNetwork,
     int cand_sum = 0;
     double cand_average = 0;
     int did_wsd = 0;
+    double logp=0.0;
+    std::vector<std::shared_ptr<std::pair<double, std::string>>> results;
     while (std::getline(ifs, line)) {
         boost::shared_ptr<data_sets::CorpusFraction> frac = testSet->getNewFrac();
         readLine(line, words, pos);
@@ -1297,7 +1429,7 @@ int simple_wsd(NeuralNetwork<Cpu>& neuralNetwork,
             else if (_p == POS_OTHER)
                 wsd_result = word;
             else {
-                wsd_result = wsd(word, _p, word_synsets[word], output_, lexeme_emb, thr, &cand);
+                wsd_result = wsd(word, _p, word_synsets[word], output_, lexeme_emb, thr, &cand, &logp, 0, &results);
                 if (cand != 0) {
                     cand_sum += cand;
                     did_wsd += 1;
@@ -1414,6 +1546,34 @@ void show_v(std::vector<T> v)
     std::cout << std::endl;
 }
 
+std::vector<std::pair<int, int>> getAmbiguousWords(
+    const std::vector<std::string> &words,
+    const std::vector<POS_type_t> &pos,
+    std::unordered_map<std::string, std::vector<std::string>> &word_synsets
+)
+{
+    std::string word, syn;
+    std::vector<std::pair<int, int>> v;
+    v.reserve(words.size());
+    POS_type_t _p, pos_;
+    for (size_t i = 0; i < words.size(); i++) {
+        word = words.at(i);
+        _p = pos.at(i);
+        if (word_synsets.find(word) == word_synsets.end() || _p == POS_OTHER)
+            continue;
+
+        int num_cand = 0;
+        for (size_t j = 0; j < word_synsets[word].size(); ++j) {
+            std::tie(syn, pos_) = getLexemeSynset(word, word_synsets[word][j]);
+            if (_p != pos_) continue;
+            ++num_cand;
+        }
+        v.push_back(std::make_pair(i, num_cand));
+    }
+
+    return v;
+}
+
 template <typename TDevice>
 int beam_wsd(NeuralNetwork<Cpu>& neuralNetwork,
              const std::string& wsd_input,
@@ -1423,7 +1583,8 @@ int beam_wsd(NeuralNetwork<Cpu>& neuralNetwork,
              double thr,
              int beam_size,
              boost::shared_ptr<data_sets::Corpus> &testSet,
-             const std::unordered_map<std::string, int>& _wordDict2)
+             const std::unordered_map<std::string, int>& _wordDict2,
+             BeamSearch_type_t search_type)
 {
     std::ifstream ifs(wsd_input);
     std::ofstream ofs(wsd_output);
@@ -1449,7 +1610,17 @@ int beam_wsd(NeuralNetwork<Cpu>& neuralNetwork,
         double last_score=1;
         beamv.push_back(std::make_shared<beam::Beam_state>(words, 0.0, words.size(), 0.0));
         int start_pos = 0;
-        while(start_pos < words.size()) {
+        std::vector<std::pair<int, int>> candwords = getAmbiguousWords(words, pos, word_synsets);
+        if (search_type == BST_S2C) {
+            std::sort(candwords.begin(), candwords.end(),
+                      [](const std::pair<int, int>& l, const std::pair<int, int>& r)
+                      {
+                          return l.second < r.second;
+                      });
+        }
+        // while(start_pos < words.size()) {
+        for (const auto& candword : candwords) {
+            start_pos = candword.first;
             for (auto cand : beamv) {
                 // beam_wsd_act<TDevice>(
                 show_v(*(cand.get()->words()));
@@ -1490,7 +1661,7 @@ int beam_wsd(NeuralNetwork<Cpu>& neuralNetwork,
         }
         // output wsd result
         if (beamv.size() > 1){
-            if (beamv[0]->score() - beamv[1]->score() > thr)
+            if (beamv[0]->score_() - beamv[1]->score_() > thr)
                 outputResult(ofs, beamv[0]->words().get());
             else
                 outputResult(ofs, &words);
