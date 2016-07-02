@@ -1,14 +1,14 @@
 #include "wsdDocument.hpp"
+#include "wsdutil.hpp"
 
 namespace wsd {
 
 AmbiguousWord::AmbiguousWord(
-    int line
-    int wordposition
+    std::vector<std::tuple<int, int>> &_position,
     std::string _word,
-    std::vector<std::string> _senses
+    const std::vector<std::string>& _senses
 )
-: position (std::make_tuple(line, wordposition)),
+: position (_position),
   word     (_word),
   candsize (_senses.size()),
   senses   (_senses)
@@ -33,14 +33,49 @@ bool AmbiguousWord::operator> (const AmbiguousWord& w) const
 
 
 
+inline void updateSet(std::unordered_set<std::string>* s, std::vector<std::string>* v)
+{
+    for (const std::string& item : *v)
+        s->insert(item);
+}
+
 wsdDocument::wsdDocument(const std::string& filename)
 {
+    std::ifstream ifs(filename);
+    std::string line, wp;
+    int l = 0;
+    while (std::getline(ifs, line)) {
+        std::vector<std::string> words;
+        std::vector<POS_type_t> pos;
+        util::readLine(line, words, pos);
+        m_maximum_length = (words.size() > m_maximum_length) ? words.size() : m_maximum_length;
+        updateSet(&m_words, &words);
 
+        // set position
+        for (int i = 0; i < words.size(); ++i) {
+            wp = util::wordPosStr(words.at(i), pos.at(i));
+            if (m_wp_position.find(wp) == m_wp_position.end())
+                m_wp_position[wp] = std::vector<std::tuple<int, int>>();
+            m_wp_position[wp].push_back(std::make_tuple(l, i));
+        }
+        m_lines.push_back(words);
+        m_pos.push_back(pos);
+        ++l;
+    }
+    m_length = m_lines.size();
 };
-int max_len() const;
-    int len() const;
-    std::vector<std::vector<std::string>>* lines();
-    std::unordered_set<std::string>* words();
+
+int wsdDocument::max_len() const { return m_maximum_length}
+int wsdDocument::len() const { return m_length; }
+
+std::vector<std::vector<std::string>>* wsdDocument::lines();
+{
+    return &m_lines;
+};
+
+std::unordered_set<std::string>* wsdDocument::words()
+{
+    return &m_words;
 };
 
 }
